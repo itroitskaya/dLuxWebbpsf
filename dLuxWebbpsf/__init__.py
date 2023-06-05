@@ -1,4 +1,4 @@
-name = "webb_dlux"
+name = "dLuxWebbpsf"
 __version__ = "0.0.1"
 
 # Import as modules

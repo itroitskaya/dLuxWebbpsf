@@ -27,17 +27,17 @@ with open('requirements.txt') as f:
 
 setuptools.setup(
     python_requires='>=3.7,<4.0',
-    name="webb_dlux",
-    version=find_version("webb_dlux", "__init__.py"),
+    name="dLuxWebbpsf",
+    version=find_version("dLuxWebbpsf", "__init__.py"),
     description="JWST PSF simulation on Jax",
     long_description=long_description,
 
     author="Irina Troitskaya",
     author_email="i.troitskaya@uq.edu.au",
-    url="https://github.com/itroitskaya/webb_dlux",
+    url="https://github.com/itroitskaya/dLuxWebbpsf",
 
     project_urls={
-        "Bug Tracker": "https://github.com/itroitskaya/webb_dlux/issues",
+        "Bug Tracker": "https://github.com/itroitskaya/dLuxWebbpsf/issues",
     },
 
     install_requires=install_requires,
@@ -47,5 +47,5 @@ setuptools.setup(
         "Operating System :: OS Independent",
     ],
 
-    packages = ["webb_dlux", "webb_dlux/utils"]
+    packages = ["dLuxWebbpsf", "dLuxWebbpsf/utils"]
 )

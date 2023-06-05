@@ -5,7 +5,7 @@ import scipy
 from dLux.optics import OpticalLayer
 
 import scipy.special
-from webb_dlux.utils import j1, get_pixel_positions
+from dLuxWebbpsf.utils import j1, get_pixel_positions
 
 __all__ = ["InvertY", "InvertX", "InvertXY", "Pad", "Crop", "NircamCirc", \
            "NIRCamFieldAndWavelengthDependentAberration"]

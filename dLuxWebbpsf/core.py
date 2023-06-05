@@ -1,5 +1,5 @@
 import dLux as dl
-from webb_dlux.optics import *
+from dLuxWebbpsf.optics import *
  
 __all__ = ["get_nircam_optics"]
 
@@ -42,17 +42,15 @@ def get_nircam_optics(webb_osys,
             #Plane 0: Pupil plane: JWST Entrance Pupil
             dl.CreateWavefront(npix, diameter, 'Angular'),
             dl.TransmissiveOptic(webb_aper),
-            #dl.OPD(npix=1024, opd_array=f64[1024,1024]),
             dl.AddOPD(webb_opd),
 
             #Plane 1: Coordinate Inversion in y axis
             InvertY(),
 
             #Plane 2: Image plane: MASK430R
+            #TODO: Check if padding is not needed
             Pad(npix * nircam.planes[2].oversample),
             dl.AngularFFT(),
-            #TODO: Call get_transmission(wavefront)
-            #dl.TransmissiveOptic(nircam.planes[2].transmission),
             NircamCirc(nircam.planes[2].sigma, diameter, npix, nircam.planes[2].oversample),
             dl.AngularFFT(inverse=True),
             Crop(npix),
@@ -61,12 +59,11 @@ def get_nircam_optics(webb_osys,
             dl.TransmissiveOptic(pupil_mask),
 
             #Plane 4: Pupil plane: NIRCamLWA internal WFE at V2V3=(1.46,-6.75)', near Z430R_A
-            #dl.AddOPD(nircam.planes[4].get_opd(wavel)),
+            dl.TransmissiveOptic(nircam.planes[4].amplitude),
             NIRCamFieldAndWavelengthDependentAberration(webb_osys, nircam.planes[4].opd, nircam.planes[4].zernike_coeffs),
 
             #Plane 5: Detector plane: NIRCam detector (79x79 pixels, 0.063 arcsec / pix)
-            dl.AngularMFT(det_npix, pscale),
-            #InvertXY()          
+            dl.AngularMFT(det_npix, pscale)
         ]
         return optical_layers
 
