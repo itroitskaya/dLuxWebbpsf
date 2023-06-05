@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=45", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dLuxWebbpsf"
+version = "0.0.9"
+description = "A repo to hold dLux Webbpsf models."
+readme = "README.md"
+
+#[dependencies]
+#dLux = "*"
+#jax = "*"
+#jaxlib = "*"
+#
+#[test]
+#[scripts]
