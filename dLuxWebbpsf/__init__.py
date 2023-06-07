@@ -2,15 +2,15 @@ name = "dLuxWebbpsf"
 __version__ = "0.0.1"
 
 # Import as modules
-from . import core
+from . import optical_layers
 from . import optics
 
 # Import core functions from modules
-from .core         import *
-from .optics       import *
+from .optics         import *
+from .optical_layers       import *
 
 # Add to __all__
-__all__ = core.__all__ + optics.__all__ 
+__all__ = optics.__all__ + optical_layers.__all__ 
 
 # Check for 64-bit
 from jax import config
