@@ -59,11 +59,6 @@ class NIRCamCoron(dl.optics.LayeredOptics):
         npix = 1024
         diameter = pupil_plane.pixelscale.to('m/pix').value * pupil_plane.npix
 
-        # Aperture and OPD
-        webb_aper = nircam.planes[0].amplitude
-        webb_opd = nircam.planes[0].opd
-        pupil_mask = nircam.planes[3].amplitude
-
         # Calculate detector parameters
         det_npix = (det_plane.fov_pixels * det_plane.oversample).value
         pscale = det_plane.pixelscale/det_plane.oversample
@@ -72,18 +67,21 @@ class NIRCamCoron(dl.optics.LayeredOptics):
         # Make layers
         optical_layers = [
             #Plane 0: Pupil plane: JWST Entrance Pupil
-            (dl.Optic(webb_aper, webb_opd), "Pupil"),
+            (dl.Optic(nircam.planes[0].amplitude, nircam.planes[0].opd), "Pupil"),
 
             #Plane 1: Coordinate Inversion in y axis
             (InvertY(), "InvertY"),
 
             #Plane 2: Image plane: NIRCam mask
-            dl.FFT(focal_length=None, pad=nircam.planes[2].oversample),
+            #TODO: Pad and crop only when oversample > 1
+            Pad(npix * nircam.planes[2].oversample),
+            dl.FFT(focal_length=None, pad=1),
             (NircamCirc(nircam.planes[2].sigma, diameter, npix, nircam.planes[2].oversample), "NIRCamCirc"),
-            dl.FFT(focal_length=None, pad=nircam.planes[2].oversample, inverse=True),
+            dl.FFT(focal_length=None, pad=1, inverse=True),
+            Crop(npix),
 
             #Plane 3: Pupil plane
-            (dl.Optic(pupil_mask), "PupilMask"),
+            (dl.Optic(nircam.planes[3].amplitude), "PupilMask"),
 
             #Plane 4: Pupil plane: NIRCamLWA internal WFE at V2V3=(1.46,-6.75)', near Z430R_A
             dl.Optic(nircam.planes[4].amplitude),

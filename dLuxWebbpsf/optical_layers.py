@@ -15,14 +15,14 @@ class InvertY(OpticalLayer):
         super().__init__()
 
     def __call__(self, wavefront):
-        return wavefront.flip((1))
+        return wavefront.flip((0))
     
 class InvertX(OpticalLayer):
     def __init__(self):
         super().__init__()
 
     def __call__(self, wavefront):
-        return wavefront.flip((0))
+        return wavefront.flip((1))
     
 class InvertXY(OpticalLayer):
     def __init__(self):
@@ -67,10 +67,10 @@ class NircamCirc(OpticalLayer):
         super().__init__()
     
     def __call__(self, wavefront):
-        
         #jax.debug.print("wavelength: {}", vars(wavefront))
-        
-        return wavefront.multiply('amplitude', self.get_transmission(wavefront.wavelength, wavefront.pixel_scale))
+
+        amplitude = self.get_transmission(wavefront.wavelength, wavefront.pixel_scale)
+        return wavefront * amplitude
     
     def get_transmission(self, wavelength, pixelscale):
         #s = 2035
@@ -101,9 +101,6 @@ class NircamCirc(OpticalLayer):
         
         sigmar = sigmar.clip(np.finfo(sigmar.dtype).tiny, bessel_j1_zero2)  # avoid divide by zero -> NaNs
         
-        #transmission = (1 - (2 * scipy.special.j1(sigmar) / sigmar) ** 2)
-        #transmission = (1 - (2 * jax.scipy.special.bessel_jn(sigmar,v=1)[1] / sigmar) ** 2)
-        #transmission = (1 - (2 * jv(1, sigmar) / sigmar) ** 2)
         transmission = (1 - (2 * j1(sigmar) / sigmar) ** 2)
         
         #jax.debug.print("transmission: {}", transmission[s:-s,s:-s][0].tolist())
@@ -137,7 +134,6 @@ class NircamCirc(OpticalLayer):
         transmission = np.where((y < -11.5) & (y > -13), 0.7, transmission)
         
         return transmission
-    
 
 class NIRCamFieldAndWavelengthDependentAberration(OpticalLayer):
     opd: None
@@ -159,6 +155,10 @@ class NIRCamFieldAndWavelengthDependentAberration(OpticalLayer):
         
         self.opd = np.asarray(opd, dtype=float)
         self.zernike_coeffs = np.asarray(zernike_coeffs, dtype=float)
+        
+        # Check for coronagraphy
+        pupil_mask = instrument._pupil_mask
+        is_nrc_coron = (pupil_mask is not None) and ( ('LYOT' in pupil_mask.upper()) or ('MASK' in pupil_mask.upper()) )
 
         # Polynomial equations fit to defocus model. Wavelength-dependent focus 
         # results should correspond to Zernike coefficients in meters.
@@ -196,40 +196,49 @@ class NIRCamFieldAndWavelengthDependentAberration(OpticalLayer):
 
         # Which wavelength was used to generate the OPD map we have already
         # created from zernikes?
+
+        # Apply wavelength-dependent tilt offset for coronagraphy
+        # We want the reference wavelength to be that of the target acq filter
+        # Final offset will position TA ref wave at the OPD ref wave location
+        #   (wave_um - opd_ref_wave) - (ta_ref_wave - opd_ref_wave) = wave_um - ta_ref_wave
         if instrument.channel.upper() == 'SHORT':
             self.focusmodel = sw_focus_cf
             opd_ref_wave = 2.12
         else:
             self.focusmodel = lw_focus_cf
             opd_ref_wave = 3.23
-        
-        self.opd_ref_focus = np.polyval(self.focusmodel, opd_ref_wave)
-        
-        print("opd_ref_focus: {}", self.opd_ref_focus)
-
+            
+            if is_nrc_coron:
+                self.opd_ref_focus = np.polyval(self.focusmodel, opd_ref_wave)
+            else:
+                self.opd_ref_focus = 1.206e-7 # Not coronagraphy (e.g., imaging)           
+       
         # If F323N or F212N, then no focus offset necessary
         if ('F323N' in instrument.filter) or ('F212N' in instrument.filter):
             self.deltafocus = lambda wl: 0
         else:
             self.deltafocus = lambda wl: np.polyval(self.focusmodel, wl) - self.opd_ref_focus
 
-        # Apply wavelength-dependent tilt offset for coronagraphy
-        # We want the reference wavelength to be that of the target acq filter
-        # Final offset will position TA ref wave at the OPD ref wave location
-        #   (wave_um - opd_ref_wave) - (ta_ref_wave - opd_ref_wave) = wave_um - ta_ref_wave
-        
-        if instrument.channel.upper() == 'SHORT':
-            self.ctilt_model = sw_ctilt_cf
-            ta_ref_wave = 2.10
-        else: 
-            self.ctilt_model = lw_ctilt_cf
-            ta_ref_wave = 3.35
+    
+        if is_nrc_coron:
+            if instrument.channel.upper() == 'SHORT':
+                self.ctilt_model = sw_ctilt_cf
+                ta_ref_wave = 2.10
+            else: 
+                self.ctilt_model = lw_ctilt_cf
+                ta_ref_wave = 3.35
             
-        self.tilt_ref_offset = np.polyval(self.ctilt_model, ta_ref_wave)
+            self.tilt_ref_offset = np.polyval(self.ctilt_model, ta_ref_wave)
         
-        print("tilt_ref_offset: {}", self.tilt_ref_offset)
+            print("opd_ref_focus: {}", self.opd_ref_focus)
+        
+            print("tilt_ref_offset: {}", self.tilt_ref_offset)
 
-        self.tilt_offset = lambda wl: np.polyval(self.ctilt_model, wl) - self.tilt_ref_offset
+            self.tilt_offset = lambda wl: np.polyval(self.ctilt_model, wl) - self.tilt_ref_offset
+        else:
+            self.tilt_ref_offset = None
+            self.ctilt_model = None
+            self.tilt_offset = lambda wl: 0
         
     def __call__(self, wavefront):
         
@@ -241,5 +250,3 @@ class NIRCamFieldAndWavelengthDependentAberration(OpticalLayer):
         mod_opd = mod_opd + self.tilt_offset(wavelength) * self.tilt_zern
         
         return wavefront.add_opd(mod_opd)
-
-
