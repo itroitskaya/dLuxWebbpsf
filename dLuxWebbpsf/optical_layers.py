@@ -230,9 +230,8 @@ class NIRCamFieldAndWavelengthDependentAberration(OpticalLayer):
             
             self.tilt_ref_offset = np.polyval(self.ctilt_model, ta_ref_wave)
         
-            print("opd_ref_focus: {}", self.opd_ref_focus)
-        
-            print("tilt_ref_offset: {}", self.tilt_ref_offset)
+            #print("opd_ref_focus: {}", self.opd_ref_focus)
+            #print("tilt_ref_offset: {}", self.tilt_ref_offset)
 
             self.tilt_offset = lambda wl: np.polyval(self.ctilt_model, wl) - self.tilt_ref_offset
         else:
