@@ -8,9 +8,10 @@ from . import optics
 # Import core functions from modules
 from .optics         import *
 from .optical_layers       import *
+from .instruments   import *
 
 # Add to __all__
-__all__ = optics.__all__ + optical_layers.__all__ 
+__all__ = optics.__all__ + optical_layers.__all__ + instruments.__all__
 
 # Check for 64-bit
 from jax import config
