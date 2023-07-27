@@ -1,9 +1,9 @@
 from __future__ import annotations
 import dLux as dl
+import dLux.utils as dlu
 import webbpsf
 
 from dLuxWebbpsf.optical_layers import *
-from dLuxWebbpsf.utils import rebin
 
 __all__ = ["NIRCam"]
 
@@ -50,24 +50,17 @@ class NIRCam(dl.instruments.Instrument):
         
         # Get the pupil and detector planes
         pupil_plane = nircam.planes[0]
-        detector_plane = nircam.planes[-1]
 
         # Define wavefront 
         npix = 1024 // wavefront_downsample
         diameter = pupil_plane.pixelscale.to('m/pix').value * pupil_plane.npix
 
-        # Calculate detector parameters
-        det_npix = (detector_plane.fov_pixels * detector_plane.oversample).value
-        pscale = (detector_plane.pixelscale / detector_plane.oversample).to('radian/pix').value
-        #print(f'pixel scale: {pscale}')
-
-        # Define optical layers
         pupil_mask = pupil_plane.amplitude
         pupil_opd = pupil_plane.opd
 
         if wavefront_downsample > 1:
-            pupil_mask = rebin(pupil_mask, (npix, npix))
-            pupil_opd = rebin(pupil_opd, (npix, npix))
+            pupil_mask = dlu.downsample(pupil_mask, wavefront_downsample)
+            pupil_opd = dlu.downsample(pupil_opd, wavefront_downsample)
 
         optical_layers = [
             #Plane 0: Pupil plane: JWST Entrance Pupil
@@ -77,7 +70,7 @@ class NIRCam(dl.instruments.Instrument):
             (InvertY(), "InvertY")
         ]
 
-        layer_index = 2
+        # Define coronagraphic planes
 
         # TODO: Assert that both are present
         if pupil_mask is not None and coron_mask is not None:
@@ -93,20 +86,32 @@ class NIRCam(dl.instruments.Instrument):
                 #Plane 3: Pupil plane
                 (dl.Optic(nircam.planes[3].amplitude), "PupilMask"),
             ])
-            layer_index = 4
 
-        detector_mask = nircam.planes[layer_index].amplitude
-        detector_opd = nircam.planes[layer_index].opd
+
+        #Plane 4: Pupil plane: NIRCamLWA internal WFE at V2V3=(1.46,-6.75)', near Z430R_A
+
+        aberration_layer = nircam.planes[-2]
+        aberration_mask = aberration_layer.amplitude
+        aberration_opd = aberration_layer.opd
 
         if wavefront_downsample > 1:
-            detector_mask = rebin(detector_mask, (npix, npix))
-            detector_opd = rebin(detector_opd, (npix, npix))
+            aberration_mask = dlu.downsample(aberration_mask, wavefront_downsample)
+            aberration_opd = dlu.downsample(aberration_opd, wavefront_downsample)
+
+        aberration_zernikes = aberration_layer.zernike_coeffs
 
         optical_layers.extend([
-            #Plane 4: Pupil plane: NIRCamLWA internal WFE at V2V3=(1.46,-6.75)', near Z430R_A
-            (NIRCamFieldAndWavelengthDependentAberration(webb_osys, detector_mask, detector_opd, nircam.planes[layer_index].zernike_coeffs), "NIRCamFieldAndWavelengthDependentAberration"),
+            (NIRCamFieldAndWavelengthDependentAberration(webb_osys, aberration_mask, aberration_opd, aberration_zernikes), "NIRCamFieldAndWavelengthDependentAberration")
+        ])
 
-            #Plane 5: Detector plane: NIRCam detector
+
+        #Plane 5: Detector plane: NIRCam detector
+
+        detector_plane = nircam.planes[-1]
+        det_npix = (detector_plane.fov_pixels * detector_plane.oversample).value
+        pscale = (detector_plane.pixelscale / detector_plane.oversample).to('radian/pix').value
+        #print(f'pixel scale: {pscale}')
+        optical_layers.extend([
             dl.MFT(det_npix, pscale)
         ])
 
@@ -120,6 +125,8 @@ class NIRCam(dl.instruments.Instrument):
 
         detector = dl.LayeredDetector(detector_layers)
 
+
+        # Define source
         if nlambda is None or nlambda == 0:
             nlambda = webb_osys._get_default_nlambda(webb_osys.filter)
 
@@ -129,13 +136,13 @@ class NIRCam(dl.instruments.Instrument):
         self.filter_weights = weights
 
         if source is None:
+            # Generate point source if no source is provided
             spectrum = dl.Spectrum(wavelengths, weights)
-
             position = [0, 0]
             if offset is not None:
                 position = offset
-
             # wavelengths are still required even if they are discarded
             source = dl.PointSource(wavelengths=wavelengths, spectrum=spectrum, position=position)
 
+        # Initialize the instrument
         super().__init__(optics=optics, sources=(source, 'source'), detector=detector)
