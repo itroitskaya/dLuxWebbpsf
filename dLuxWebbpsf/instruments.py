@@ -177,8 +177,8 @@ class NIRISS(JWST):
         # this package we will want to use a layer with arcsec units.
         osamp = planes[-1].oversample
         det_npix = (planes[-1].fov_pixels * osamp).value
-        pscale = (planes[-1].pixelscale).to("radian/pix").value
-        layers.append(dl.MFT(det_npix, pscale, oversample=osamp))
+        pscale = (planes[-1].pixelscale).to("arcsec/pix").value
+        layers.append(dLuxWebbpsf.MFT(det_npix, pscale, oversample=osamp))
 
         # Finally, construct the actual Optics object
         return dl.LayeredOptics(
@@ -317,8 +317,8 @@ class NIRCam(JWST):
         # this package we will want to use a layer with arcsec units.
         osamp = planes[-1].oversample
         det_npix = (planes[-1].fov_pixels * osamp).value
-        pscale = (planes[-1].pixelscale).to("radian/pix").value
-        layers.append(dl.MFT(det_npix, pscale, oversample=osamp))
+        pscale = (planes[-1].pixelscale).to("arcsec/pix").value
+        layers.append(dLuxWebbpsf.MFT(det_npix, pscale, oversample=osamp))
 
         # Finally, construct the actual Optics object
         return dl.LayeredOptics(
