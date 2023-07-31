@@ -217,11 +217,12 @@ class NIRISS(JWST):
         # Primary mirror - note this class automatically flips about the y-axis
         layers = [
             (
-                dLuxWebbpsf.JWSTPrimary(
+                dLuxWebbpsf.optical_layers.JWSTPrimary(
                     dsamp(planes[0].amplitude), dsamp(planes[0].opd)
                 ),
                 "pupil",
-            )
+            ),
+            (dl.Flip(0), "InvertY"),
         ]
 
         # If 'clean', then we don't want to apply pre-calc'd aberrations
@@ -320,7 +321,8 @@ class NIRCam(JWST):
                     dsamp(planes[0].amplitude), dsamp(planes[0].opd)
                 ),
                 "pupil",
-            )
+            ),
+            (dl.Flip(0), "InvertY"),
         ]
 
         # Coronagraphic masks

@@ -50,10 +50,6 @@ class JWSTPrimary(dl.Optic):
         # Apply phase
         phase = wavefront.phase + wavefront.wavenumber * self.opd
 
-        # Flip both about y axis
-        amplitude = np.flip(amplitude, axis=0)
-        phase = np.flip(phase, axis=0)
-
         # Update and return
         return wavefront.set(["amplitude", "phase"], [amplitude, phase])
 
