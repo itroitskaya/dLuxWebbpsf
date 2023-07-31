@@ -11,6 +11,13 @@ Script for all the various forms of detector transformations required to model
 webbpsf.
 """
 
+__all__ = [
+    "ApplyJitter",
+    "Rotate",
+    "DistortionFromSiaf",
+    "ApplySiafDistortion",
+]
+
 
 class ApplyJitter(dl.DetectorLayer):
     """

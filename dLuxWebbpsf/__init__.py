@@ -6,12 +6,14 @@ from . import optical_layers
 from . import optics
 from . import instruments
 from . import propagators
+from . import detector_layers
 
 # Import core functions from modules
 from .optics import *
 from .optical_layers import *
 from .instruments import *
 from .propagators import *
+from .detector_layers import *
 
 
 # Add to __all__
@@ -20,6 +22,7 @@ __all__ = (
     + optical_layers.__all__
     + instruments.__all__
     + propagators.__all__
+    + detector_layers.__all__
 )
 
 # Check for 64-bit
