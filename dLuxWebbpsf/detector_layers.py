@@ -14,24 +14,31 @@ webbpsf.
 
 class ApplyJitter(dl.DetectorLayer):
     """
-    I actually think this wont work properly because the array sizes change
-    based on sigma - this may need to be fixed.
+    Applies a gaussian jitter to the image. This is designed to match the
+    scipy.ndimage.gaussian_filter function in the same vein of webbpsf.
     """
 
     sigma: Array
 
     def __init__(self, sigma):
-        super().__init__("ApplyJitter")
-        self.sigma = np.asarray(sigma, dtype=float)
+        super().__init__()
+        self.sigma = float(sigma)
 
-    def __call__(self, im):
-        # TODO: Make this take in and return an actual dLux.Image class
-        return utils.gaussian_filter_correlate(im, self.sigma)
+    def __call__(self, image):
+        # Convert sigma to pixels, note this assumes sigma has the same units
+        # as the pixel scale
+        jitter_pix = image.pixel_scale / self.sigma
+        jittered = utils.gaussian_filter_correlate(image.image, jitter_pix)
+        return image.set("image", jittered)
 
 
 class Rotate(dl.RotateDetector):
+    """
+    A simple rotation layer that overwrites the default dLux rotation layer
+    in order to apply a cubic-spline interpolation.
+    """
+
     def __call__(self, image):
-        """"""
         rotated = utils.rotate(image.image, self.angle, order=3)
         return image.set("image", rotated)
 
@@ -77,10 +84,10 @@ class ApplySiafDistortion(dl.DetectorLayer):
     ):
         super().__init__("ApplySiafDistortion")
         self.degree = int(degree)
-        self.Sci2Idl = np.array(Sci2Idl, dtype=float)
-        self.SciRef = np.array(SciRef, dtype=float)
-        self.sci_cen = np.array(sci_cen, dtype=float)
-        self.pixel_scale = np.array(pixel_scale, dtype=float)
+        self.Sci2Idl = float(Sci2Idl)
+        self.SciRef = float(SciRef)
+        self.sci_cen = float(sci_cen)
+        self.pixel_scale = float(pixel_scale)
         self.oversample = int(oversample)
         self.xpows, self.ypows = self.get_pows()
 
@@ -168,7 +175,5 @@ class ApplySiafDistortion(dl.DetectorLayer):
         return map_coordinates(image, coords_distort, order=1)
 
     def __call__(self, image):
-        """ """
-        # TODO: Make this take in and return an actual dLux.Image class
-        image_out = self.apply_Sci2Idl_distortion(image)
-        return image_out
+        image_out = self.apply_Sci2Idl_distortion(image.image)
+        return image.set("image", image_out)
