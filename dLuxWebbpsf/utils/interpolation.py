@@ -2,6 +2,8 @@ from jax import Array
 import jax.numpy as np
 import dLux.utils as dlu
 
+__all__ = ["rotate"]
+
 
 def rotate(array: Array, angle: Array, order: int = 3) -> Array:
     """
@@ -35,7 +37,9 @@ def rotate(array: Array, angle: Array, order: int = 3) -> Array:
     coordinates_rotated = _rotate(coordinates, angle) + centre
 
     # Interpolate
-    return _map_coordinates(array, coordinates_rotated, order=order)
+    return _map_coordinates(
+        array, coordinates_rotated, order=order, mode="constant", cval=0.0
+    )
 
 
 """
