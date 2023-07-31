@@ -94,7 +94,7 @@ class CoronOcculter(OpticalLayer):
         npixels_in = wavefront.npixels
         wavefront = wavefront.FFT(pad=self.pad)
         wavefront = self.occulter(wavefront)
-        wavefront = wavefront.IFFT()
+        wavefront = wavefront.IFFT(pad=1)
         return wavefront.crop_to(npixels_in)
 
     def __getattr__(self, name):
