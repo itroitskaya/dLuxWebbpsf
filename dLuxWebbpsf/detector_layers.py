@@ -19,7 +19,7 @@ __all__ = [
 ]
 
 
-class ApplyJitter(dl.DetectorLayer):
+class ApplyJitter(dl.detector_layers.DetectorLayer):
     """
     Applies a gaussian jitter to the image. This is designed to match the
     scipy.ndimage.gaussian_filter function in the same vein of webbpsf.
@@ -34,8 +34,10 @@ class ApplyJitter(dl.DetectorLayer):
     def __call__(self, image):
         # Convert sigma to pixels, note this assumes sigma has the same units
         # as the pixel scale
-        jitter_pix = image.pixel_scale / self.sigma
-        jittered = utils.gaussian_filter_correlate(image.image, jitter_pix)
+        jitter_pix = self.sigma / image.pixel_scale
+        jittered = utils.gaussian_filter_correlate(
+            image.image, jitter_pix, ksize=3
+        )
         return image.set("image", jittered)
 
 
@@ -72,7 +74,7 @@ class DistortionFromSiaf:
         )
 
 
-class ApplySiafDistortion(dl.DetectorLayer):
+class ApplySiafDistortion(dl.detector_layers.DetectorLayer):
     """
     Applies Science to Ideal distortion following webbpsf/pysaif
     """
