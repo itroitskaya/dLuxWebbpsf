@@ -73,14 +73,33 @@ class JWST(dl.Instrument):
         optics = webb_osys.get_optical_system(**kwargs)
         return webb_osys, optics
 
-    def _construct_detector(self, instrument):
+    def _construct_detector(self, instrument, optics):
         """Constructs a detector object for the instrument."""
-        # Need to add in detector transformations first, coming soon...
-        Warning(
-            "Detector transformations not yet implemented, "
-            "detector object will be None."
-        )
-        return None
+
+        # Jitter - webbpsf default units are arcseconds, so we assume that psf
+        # units are also arcseconds
+        options = instrument.options
+        if "jitter" in options.keys() and options["jitter"] == "gaussian":
+            layers = [
+                dLuxWebbpsf.ApplyJitter(
+                    sigma=instrument.options["jitter_sigma"]
+                )
+            ]
+
+        # Rotation - probably want to eventually change units to degrees
+        angle = instrument._detector_geom_info.aperture.V3IdlYAngle
+        layers.append(dLuxWebbpsf.Rotate(angle=dlu.deg_to_rad(angle)))
+
+        # Distortion
+        if "add_distortion" in options.keys() and options["add_distortion"]:
+            siaf = instrument._detector_geom_info.aperture["aperture"]
+            layers.append(dLuxWebbpsf.DistortionFromSiaf(siaf))
+
+        # Downsample - assumes last plane is detector
+        layers.append(dl.IntegerDownsample(optics.planes[-1].oversample))
+
+        # Construct detector
+        return dl.LayeredDetector(layers)
 
     def _construct_source(self, instrument, nlambda):
         """Constructs a source object for the instrument."""
@@ -135,7 +154,7 @@ class NIRISS(JWST):
         source = (self._construct_source(instrument, nlambda), "source")
 
         """Construct Detector Object"""
-        detector = self._construct_detector(instrument)
+        detector = self._construct_detector(instrument, osys)
 
         """Construct the instrument"""
         super().__init__(optics=optics, sources=source, detector=detector)
@@ -238,7 +257,7 @@ class NIRCam(JWST):
         source = self._construct_source(instrument, nlambda)
 
         """Construct Detector Object"""
-        detector = self._construct_detector(instrument)
+        detector = self._construct_detector(instrument, optics)
 
         """Construct the instrument"""
         super().__init__(optics=optics, sources=source, detector=detector)
