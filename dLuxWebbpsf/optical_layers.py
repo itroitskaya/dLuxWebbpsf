@@ -195,7 +195,8 @@ class NircamCirc(OpticalLayer):
 
 class NIRCamFieldAndWavelengthDependentAberration(OpticalLayer):
     opd: None
-
+    amplitude: None
+    
     zernike_coeffs: None
     defocus_zern: None
     tilt_zern: None
@@ -207,10 +208,11 @@ class NIRCamFieldAndWavelengthDependentAberration(OpticalLayer):
     ctilt_model: None
     tilt_offset: None
     tilt_ref_offset: None
-
-    def __init__(self, instrument, opd, zernike_coeffs):
+    
+    def __init__(self, instrument, amplitude, opd, zernike_coeffs):
         super().__init__()
-
+        
+        self.amplitude = np.asarray(amplitude, dtype=float)
         self.opd = np.asarray(opd, dtype=float)
         self.zernike_coeffs = np.asarray(zernike_coeffs, dtype=float)
 
@@ -310,10 +312,9 @@ class NIRCamFieldAndWavelengthDependentAberration(OpticalLayer):
                 ta_ref_wave = 3.35
 
             self.tilt_ref_offset = np.polyval(self.ctilt_model, ta_ref_wave)
-
-            print("opd_ref_focus: {}", self.opd_ref_focus)
-
-            print("tilt_ref_offset: {}", self.tilt_ref_offset)
+        
+            #print("opd_ref_focus: {}", self.opd_ref_focus)
+            #print("tilt_ref_offset: {}", self.tilt_ref_offset)
 
             self.tilt_offset = (
                 lambda wl: np.polyval(self.ctilt_model, wl)
@@ -331,5 +332,7 @@ class NIRCamFieldAndWavelengthDependentAberration(OpticalLayer):
 
         mod_opd = self.opd - self.deltafocus(wavelength) * self.defocus_zern
         mod_opd = mod_opd + self.tilt_offset(wavelength) * self.tilt_zern
-
+        
+        wavefront = wavefront * self.amplitude
+        
         return wavefront.add_opd(mod_opd)

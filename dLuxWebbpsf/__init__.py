@@ -25,6 +25,7 @@ __all__ = (
     + detector_layers.__all__
 )
 
+
 # Check for 64-bit
 from jax import config
 
