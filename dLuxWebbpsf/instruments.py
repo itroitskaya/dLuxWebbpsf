@@ -247,8 +247,6 @@ class NIRISS(JWST):
             )
 
         # Now the Fourier transform to the detector
-        # For now, we keep this in radians, but TODO either through dLux or
-        # this package we will want to use a layer with arcsec units.
         osamp = planes[-1].oversample
         det_npix = (planes[-1].fov_pixels * osamp).value
         pscale = (planes[-1].pixelscale).to("arcsec/pix").value
@@ -354,21 +352,19 @@ class NIRCam(JWST):
             # are unlikely to want this.
 
             # Not sure what this downsample is doing...
-            # aberration_mask = dsamp(planes[-2].amplitude)
+            aberration_mask = dsamp(planes[-2].amplitude)
             aberration_opd = dsamp(planes[-2].opd)
             aberration_zernikes = planes[-2].zernike_coeffs
 
             FDA = dLuxWebbpsf.NIRCamFieldAndWavelengthDependentAberration(
                 instrument,
-                # aberration_mask,
+                aberration_mask,
                 aberration_opd,
                 aberration_zernikes,
             )
             layers.append((FDA, "aberrations"))
 
         # Now the Fourier transform to the detector
-        # For now, we keep this in radians, but TODO either through dLux or
-        # this package we will want to use a layer with arcsec units.
         osamp = planes[-1].oversample
         det_npix = (planes[-1].fov_pixels * osamp).value
         pscale = (planes[-1].pixelscale).to("arcsec/pix").value
