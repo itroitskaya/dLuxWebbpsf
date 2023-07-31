@@ -178,7 +178,7 @@ class NIRISS(JWST):
             # https://github.com/spacetelescope/webbpsf/issues/667, Long term we
             # are unlikely to want this.
             FDA = dl.Optic(planes[2].amplitude, planes[2].opd)
-            layers.append((FDA, "FieldDependentAberration"))
+            layers.append((FDA, "aberrations"))
 
         # No image mask layers yet for NIRISS
         if image_mask is not None:
@@ -189,7 +189,7 @@ class NIRISS(JWST):
         # Index this from the end of the array since it will always be the second
         # last plane in the osys. Note this assumes there is no OPD in that optic.
         if pupil_mask is not None:
-            layers.append((dl.Optic(planes[-2].amplitude), "PupilMask"))
+            layers.append((dl.Optic(planes[-2].amplitude), "pupil_mask"))
 
         # Now the Fourier transform to the detector
         # For now, we keep this in radians, but TODO either through dLux or
@@ -293,14 +293,14 @@ class NIRCam(JWST):
             layers.append(
                 (
                     dLuxWebbpsf.CoronOcculter(occulter, planes[2].oversample),
-                    "ImageMask",
+                    "image_mask",
                 )
             )
 
         # Pupil mask, note this assumes there is no OPD in that optic. Index
         # from the end of the array so we dont have to check for image masks.
         if pupil_mask is not None:
-            layers.append((dl.Optic(planes[-3].amplitude), "PupilMask"))
+            layers.append((dl.Optic(planes[-3].amplitude), "pupil_mask"))
 
         # If 'clean', then we don't want to apply pre-calc'd aberrations
         if not clean:
@@ -329,7 +329,7 @@ class NIRCam(JWST):
                 aberration_opd,
                 aberration_zernikes,
             )
-            layers.append((FDA, "NIRCamFieldAndWavelengthDependentAberration"))
+            layers.append((FDA, "aberrations"))
 
         # Now the Fourier transform to the detector
         # For now, we keep this in radians, but TODO either through dLux or
