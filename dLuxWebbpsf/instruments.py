@@ -274,7 +274,7 @@ class NIRCam(JWST):
             layers.append(
                 (
                     dLuxWebbpsf.CoronOcculter(occulter, planes[2].oversample),
-                    "NIRCamCirc",
+                    "ImageMask",
                 )
             )
 
