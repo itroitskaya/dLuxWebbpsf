@@ -53,17 +53,16 @@ class Rotate(dl.RotateDetector):
 
 
 class DistortionFromSiaf:
-    def __new__(cls, aper, oversample):
-        degree = aper.Sci2IdlDeg + 1
-        coeffs_dict = aper.get_polynomial_coefficients()
+    """
+    Detector layer that applies the distortion from the SIAF file.
+    """
+    def __new__(cls, aperture, oversample=4):
+        degree = aperture.Sci2IdlDeg + 1
+        coeffs_dict = aperture.get_polynomial_coefficients()
         coeffs = np.array([coeffs_dict["Sci2IdlX"], coeffs_dict["Sci2IdlY"]])
-        sci_refs = np.array([aper.XSciRef, aper.YSciRef])
-        sci_cens = (
-            np.array([aper.XSciRef, aper.YSciRef]) + 0.5
-        )  # Note this may not be foolproof
-        pixelscale = np.array(
-            [aper.XSciScale, aper.YSciScale]
-        ).mean()  # Note this may not be foolproof
+        sci_refs = np.array([aperture.XSciRef, aperture.YSciRef])
+        sci_cens = np.array([aperture.XSciRef, aperture.YSciRef])  # Not sure why they are the same tbh
+        pixelscale = 4 * 0.0164  # Hardcoded to match WebbPSF; this may not be foolproof
         return ApplySiafDistortion(
             degree,
             coeffs,
@@ -153,32 +152,29 @@ class ApplySiafDistortion(dl.detector_layers.DetectorLayer):
             self.sci_cen[1] - self.SciRef[1],
         )
 
-        # Get paraxial pixel coordinates and detector properties
-        xarr, yarr = dl.utils.get_pixel_positions(tuple(image.shape))
-
-        # Scale and shift coordinate arrays to 'idl' frame
-        xidl = xarr * self.pixel_scale + xidl_cen
-        yidl = yarr * self.pixel_scale + yidl_cen
+        # Get paraxial pixel coordinates and detector properties.
+        nx, ny = image.shape
+        nx_half, ny_half = ((nx - 1) / 2., (ny - 1) / 2.)
+        xlin = np.linspace(-1 * nx_half, nx_half, nx)
+        ylin = np.linspace(-1 * ny_half, ny_half, ny)
+        xarr, yarr = np.meshgrid(xlin, ylin)
 
         # Scale and shift coordinate arrays to 'sci' frame
         xnew = xarr / self.oversample + self.sci_cen[0]
         ynew = yarr / self.oversample + self.sci_cen[1]
 
         # Convert requested coordinates to 'idl' coordinates
-        xnew_idl, ynew_idl = self.distort_coords(
-            self.Sci2Idl[0],
-            self.Sci2Idl[1],
-            xnew - self.SciRef[0],
-            ynew - self.SciRef[1],
-        )
+        xnew_idl, ynew_idl = self.distort_coords(self.Sci2Idl[0],
+                                                 self.Sci2Idl[1],
+                                                 xnew - self.SciRef[0],
+                                                 ynew - self.SciRef[1])
 
         # Create interpolation coordinates
         centre = (xnew_idl.shape[0] - 1) / 2
 
-        coords_distort = (
-            np.array([ynew_idl - yidl_cen, xnew_idl - xidl_cen])
-            / self.pixel_scale
-        ) + centre
+        coords_distort = (np.array([ynew_idl - yidl_cen,
+                                    xnew_idl - xidl_cen])
+                          / self.pixel_scale) + centre
 
         # Apply distortion
         return map_coordinates(image, coords_distort, order=1)
