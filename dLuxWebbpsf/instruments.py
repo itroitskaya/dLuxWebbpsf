@@ -31,7 +31,7 @@ class JWST(dl.Instrument):
         clean=False,  # bool: When true, only the measured primary mirror aberrations are applied.
         wavefront_downsample=1,  # int: downsampling factor for the wavefront
     ):
-        """Get configured instrument and optical system"""
+        # Get configured instrument and optical system
         instrument, osys = self._configure_instrument(
             instrument,
             filter=filter,
@@ -46,7 +46,7 @@ class JWST(dl.Instrument):
             detector_oversample=detector_oversample,
         )
 
-        """Construct Optics"""
+        # Construct Optics
         optics = self._construct_optics(
             osys.planes,
             image_mask,
@@ -56,13 +56,13 @@ class JWST(dl.Instrument):
             wavefront_downsample,
         )
 
-        """Construct source object"""
+        # Construct source object
         source = (self._construct_source(instrument, nlambda), "source")
 
-        """Construct Detector Object"""
+        # Construct Detector Object
         detector = self._construct_detector(instrument, osys)
 
-        """Construct the instrument"""
+        # Construct the instrument
         super().__init__(optics=optics, sources=source, detector=detector)
 
     @staticmethod
@@ -103,7 +103,7 @@ class JWST(dl.Instrument):
         if detector is not None:
             webb_osys.detector = detector
         if aperture is not None:
-            webb_osys.set_position_from_aperture_name(aperture)
+            webb_osys.aperture_name = aperture
         if options is not None:
             webb_osys.options.update(options)
 
@@ -120,8 +120,11 @@ class JWST(dl.Instrument):
         if options is not None:
             kwargs["options"] = options
 
-        # Get the optical system
+        # Get the optical system - Note we calculate the PSF here because
+        # otherwise some optical planes do not have its attributes populated,
+        # namely the CLEARP mask transmission.
         optics = webb_osys.get_optical_system(**kwargs)
+        optics.calc_psf()
         return webb_osys, optics
 
     def _construct_detector(self, instrument, optics):
@@ -132,19 +135,30 @@ class JWST(dl.Instrument):
         options = instrument.options
         if "jitter" in options.keys() and options["jitter"] == "gaussian":
             layers = [
-                dLuxWebbpsf.ApplyJitter(
-                    sigma=instrument.options["jitter_sigma"]
+                (
+                    dLuxWebbpsf.ApplyJitter(
+                        sigma=instrument.options["jitter_sigma"]
+                    ),
+                    "jitter",
                 )
             ]
 
         # Rotation - probably want to eventually change units to degrees
         angle = instrument._detector_geom_info.aperture.V3IdlYAngle
-        layers.append(dLuxWebbpsf.Rotate(angle=dlu.deg_to_rad(angle)))
+        layers.append(dLuxWebbpsf.Rotate(angle=dlu.deg_to_rad(-angle)))
 
         # Distortion
-        if "add_distortion" in options.keys() and options["add_distortion"]:
-            siaf = instrument._detector_geom_info.aperture["aperture"]
-            layers.append(dLuxWebbpsf.DistortionFromSiaf(siaf))
+        if "add_distortion" not in options.keys() or options["add_distortion"]:
+            layers.append(dLuxWebbpsf.DistortionFromSiaf(instrument, optics))
+
+        # # Charge migration (via \jitter) units of arcseconds
+        # c = webbpsf.constants
+        # sigma = c.INSTRUMENT_DETECTOR_CHARGE_DIFFUSION_DEFAULT_PARAMETERS[
+        #     instrument.name
+        # ]
+        # layers.append(
+        #     (dLuxWebbpsf.ApplyJitter(sigma=sigma), "charge_migration")
+        # )
 
         # Downsample - assumes last plane is detector
         layers.append(dl.IntegerDownsample(optics.planes[-1].oversample))
@@ -242,10 +256,18 @@ class NIRISS(JWST):
 
         # Index this from the end of the array since it will always be the second
         # last plane in the osys. Note this assumes there is no OPD in that optic.
-        if pupil_mask is not None:
-            layers.append(
-                (dl.Optic(dsamp(planes[-2].amplitude)), "pupil_mask")
+        # We need this logic here since MASK_NRM plane has an amplitude, where
+        # as the CLEARP plane has a transmission... for some reason.
+        pupil_plane = planes[-2]
+        if instrument.pupil_mask == "CLEARP":
+            layer = dl.Optic(dsamp(pupil_plane.transmission))
+        elif instrument.pupil_mask == "MASK_NRM":
+            layer = dl.Optic(dsamp(pupil_plane.amplitude))
+        else:
+            raise NotImplementedError(
+                "Only CLEARP and MASK_NRM are supported."
             )
+        layers.append((layer, "pupil_mask"))
 
         # Now the Fourier transform to the detector
         osamp = planes[-1].oversample
@@ -326,6 +348,7 @@ class NIRCam(JWST):
         ]
 
         # Coronagraphic masks
+        # TODO: This should explicity check for the correct mask (ie CIRCLYOT)
         if image_mask is not None:
             diameter = planes[0].pixelscale.to("m/pix").value * planes[0].npix
 
@@ -341,10 +364,7 @@ class NIRCam(JWST):
 
         # Pupil mask, note this assumes there is no OPD in that optic. Index
         # from the end of the array so we dont have to check for image masks.
-        if pupil_mask is not None:
-            layers.append(
-                (dl.Optic(dsamp(planes[-3].amplitude)), "pupil_mask")
-            )
+        layers.append((dl.Optic(dsamp(planes[-3].amplitude)), "pupil_mask"))
 
         # If 'clean', then we don't want to apply pre-calc'd aberrations
         if not clean:
