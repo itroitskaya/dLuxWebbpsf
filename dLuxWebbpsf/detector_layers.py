@@ -14,8 +14,8 @@ webbpsf.
 __all__ = [
     "ApplyJitter",
     "Rotate",
+    "SiafDistortion",
     "DistortionFromSiaf",
-    "ApplySiafDistortion",
 ]
 
 
@@ -47,138 +47,205 @@ class Rotate(dl.RotateDetector):
     in order to apply a cubic-spline interpolation.
     """
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.order = 3
+
     def __call__(self, image):
         rotated = utils.rotate(image.image, self.angle, order=3)
         return image.set("image", rotated)
 
 
-class DistortionFromSiaf:
+def gen_powers(degree):
     """
-    Detector layer that applies the distortion from the SIAF file.
+    Generates the powers required for a 2d polynomial
     """
-    def __new__(cls, aperture, oversample=4):
-        degree = aperture.Sci2IdlDeg + 1
-        coeffs_dict = aperture.get_polynomial_coefficients()
-        coeffs = np.array([coeffs_dict["Sci2IdlX"], coeffs_dict["Sci2IdlY"]])
-        sci_refs = np.array([aperture.XSciRef, aperture.YSciRef])
-        sci_cens = np.array([aperture.XSciRef, aperture.YSciRef])  # Not sure why they are the same tbh
-        pixelscale = 4 * 0.0164  # Hardcoded to match WebbPSF; this may not be foolproof
-        return ApplySiafDistortion(
-            degree,
-            coeffs,
-            sci_refs,
-            sci_cens,
-            pixelscale / oversample,
-            oversample,
-        )
+    n = dlu.triangular_number(degree)
+    vals = np.arange(n)
+
+    # Ypows
+    tris = dlu.triangular_number(np.arange(degree))
+    ydiffs = np.repeat(tris, np.arange(1, degree + 1))
+    ypows = vals - ydiffs
+
+    # Xpows
+    tris = dlu.triangular_number(np.arange(1, degree + 1))
+    xdiffs = np.repeat(n - np.flip(tris), np.arange(degree, 0, -1))
+    xpows = np.flip(vals - xdiffs)
+
+    return xpows, ypows
 
 
-class ApplySiafDistortion(dl.detector_layers.DetectorLayer):
+def eval_poly_2d(x, y, A, B, xpows, ypows):
     """
-    Applies Science to Ideal distortion following webbpsf/pysaif
+    Evaluate a 2D polynomial of the form: $$ z(x, y) = \Sigma_{i=0}^{deg}
+    \Sigma_{j=0}^{deg} \ \ A_{i, j} x^i y^j + B_{i, j} x^j y^i $$
+    """
+    # Promote shapes for float inputs
+    X = np.atleast_2d(x)
+    Y = np.atleast_2d(y)
+
+    # Exponentiate
+    Xpow = X[None, :, :] ** xpows[:, None, None]
+    Ypow = Y[None, :, :] ** ypows[:, None, None]
+
+    # Calcaulate new coordinates
+    Xnew = np.sum(A[:, None, None] * Xpow * Ypow, axis=0)
+    Ynew = np.sum(B[:, None, None] * Xpow * Ypow, axis=0)
+    return Xnew, Ynew
+
+
+class SiafDistortion(dl.detector_layers.DetectorLayer):
+    """
+    Applies Science to Ideal distortion following webbpsf/pysaif.
+
+    Note some of these parameters are redundant because this class is designed
+    to be potentially extended to the Sci2Idl distortion transform.
     """
 
-    degree: int
-    Sci2Idl: float
-    SciRef: float
-    sci_cen: float
-    pixel_scale: float
+    # Coordinates
+    Sci2Idl: Array
+    Idl2Sci: Array
+
+    # Reference points
+    SciRefs: Array
+    SciCens: Array
+
+    # Scale
+    SciScales: Array
+    pixelscale: float
     oversample: int
-    xpows: Array
-    ypows: Array
+
+    # Powers
+    pows: Array
 
     def __init__(
-        self, degree, Sci2Idl, SciRef, sci_cen, pixel_scale, oversample
-    ):
-        super().__init__("ApplySiafDistortion")
-        self.degree = int(degree)
-        self.Sci2Idl = float(Sci2Idl)
-        self.SciRef = float(SciRef)
-        self.sci_cen = float(sci_cen)
-        self.pixel_scale = float(pixel_scale)
-        self.oversample = int(oversample)
-        self.xpows, self.ypows = self.get_pows()
-
-    def get_pows(self):
-        n = dlu.triangular_number(self.degree)
-        vals = np.arange(n)
-
-        # Ypows
-        tris = dlu.triangular_number(np.arange(self.degree))
-        ydiffs = np.repeat(tris, np.arange(1, self.degree + 1))
-        ypows = vals - ydiffs
-
-        # Xpows
-        tris = dlu.triangular_number(np.arange(1, self.degree + 1))
-        xdiffs = np.repeat(n - np.flip(tris), np.arange(self.degree, 0, -1))
-        xpows = np.flip(vals - xdiffs)
-
-        return xpows, ypows
-
-    def distort_coords(
         self,
-        A,
-        B,
-        X,
-        Y,
+        degree,
+        Sci2Idl,
+        Idl2Sci,
+        SciRef,
+        SciCen,
+        SciScale,
+        pixelscale,
+        oversample,
     ):
-        """
-        Applts the distortion to the coordinates
-        """
+        super().__init__()
+        # Coefficients
+        self.Sci2Idl = np.array(Sci2Idl, float)
+        self.Idl2Sci = np.array(Idl2Sci, float)
 
-        # Promote shapes for float inputs
-        X = np.atleast_2d(X)
-        Y = np.atleast_2d(Y)
+        # Reference points
+        self.SciRefs = np.array(SciRef, float)
+        self.SciCens = np.array(SciCen, float)
 
-        # Exponentiate
-        Xpow = X[None, :, :] ** self.xpows[:, None, None]
-        Ypow = Y[None, :, :] ** self.ypows[:, None, None]
+        # Scale
+        self.SciScales = np.array(SciScale, float)
+        self.pixelscale = float(pixelscale)
+        self.oversample = int(oversample)
 
-        # Calcaulate new coordinates
-        Xnew = np.sum(A[:, None, None] * Xpow * Ypow, axis=0)
-        Ynew = np.sum(B[:, None, None] * Xpow * Ypow, axis=0)
-        return Xnew, Ynew
+        # Powers
+        xpows, ypows = gen_powers(int(degree) + 1)
+        self.pows = np.array([xpows, ypows])
 
-    def apply_Sci2Idl_distortion(self, image):
+    def sci_to_idl(self, coords):
         """
-        Applies the distortion from the science (ie images) frame to the
-        idealised telescope frame
+        Converts from science frame to ideal frame.
         """
-        # Convert sci cen to idl frame
-        xidl_cen, yidl_cen = self.distort_coords(
-            self.Sci2Idl[0],
-            self.Sci2Idl[1],
-            self.sci_cen[0] - self.SciRef[0],
-            self.sci_cen[1] - self.SciRef[1],
+        coords_out = np.array(
+            eval_poly_2d(
+                coords[0] - self.SciRefs[0],
+                coords[1] - self.SciRefs[1],
+                self.Sci2Idl[0],
+                self.Sci2Idl[1],
+                self.pows[0],
+                self.pows[1],
+            )
         )
 
-        # Get paraxial pixel coordinates and detector properties.
-        nx, ny = image.shape
-        nx_half, ny_half = ((nx - 1) / 2., (ny - 1) / 2.)
-        xlin = np.linspace(-1 * nx_half, nx_half, nx)
-        ylin = np.linspace(-1 * ny_half, ny_half, ny)
-        xarr, yarr = np.meshgrid(xlin, ylin)
+        return coords_out + self.SciRefs[:, None, None]
 
-        # Scale and shift coordinate arrays to 'sci' frame
-        xnew = xarr / self.oversample + self.sci_cen[0]
-        ynew = yarr / self.oversample + self.sci_cen[1]
+    def idl_to_sci(self, coords):
+        """
+        Converts from ideal frame to science frame
+        """
+        return np.array(
+            eval_poly_2d(
+                coords[0],
+                coords[1],
+                self.Idl2Sci[0],
+                self.Idl2Sci[1],
+                self.pows[0],
+                self.pows[1],
+            )
+        )
 
-        # Convert requested coordinates to 'idl' coordinates
-        xnew_idl, ynew_idl = self.distort_coords(self.Sci2Idl[0],
-                                                 self.Sci2Idl[1],
-                                                 xnew - self.SciRef[0],
-                                                 ynew - self.SciRef[1])
+    def Idl2Sci_transform(self, image):
+        """
+        Applies the Idl2Sci distortion to an input image.
 
-        # Create interpolation coordinates
-        centre = (xnew_idl.shape[0] - 1) / 2
+        Q: Are xsci_cen and ysci_cen the psf centers or the image centers?
+        This should be tested as it could require source position input
+        """
+        # Create a coordiante array for the input image
+        coords = dlu.pixel_coordinates(image.shape)
 
-        coords_distort = (np.array([ynew_idl - yidl_cen,
-                                    xnew_idl - xidl_cen])
-                          / self.pixel_scale) + centre
+        # Scale and shift to get to sci coordinates
+        coords /= (self.SciScales / self.pixelscale)[:, None, None]
+        coords += self.SciCens[:, None, None]
+
+        # Convert coordinates and centers to 'ideal' coordinates
+        coords_idl = self.sci_to_idl(coords)
+        idl_cens = self.sci_to_idl(self.SciCens)
+
+        # Shift, scale and shift back to get to pixel coordinates
+        centres = (np.array(image.shape) - 1) / 2
+        coords_distort = (coords_idl - idl_cens) / self.pixelscale
+        coords_distort += centres[:, None, None]
+
+        # Flip to go from (x, y) indexing to (i, j)
+        new_coords = np.flip(coords_distort, 0)
 
         # Apply distortion
-        return map_coordinates(image, coords_distort, order=1)
+        return map_coordinates(image, new_coords, order=1)
 
     def __call__(self, image):
-        image_out = self.apply_Sci2Idl_distortion(image.image)
+        image_out = self.Idl2Sci_transform(image.image)
         return image.set("image", image_out)
+
+
+def DistortionFromSiaf(instrument, optics):
+    """
+    NOTE: This class assumes that the optsys parameter is already populated
+    """
+    # Get siaf 'aperture' and reference points
+    aper = instrument._detector_geom_info.aperture
+    SciRefs = np.array([aper.XSciRef, aper.YSciRef])
+    SciScales = np.array([aper.XSciScale, aper.YSciScale])
+
+    # Get distortion polynomial coefficients
+    coeffs = aper.get_polynomial_coefficients()
+    Sci2Idl = np.array([coeffs["Sci2IdlX"], coeffs["Sci2IdlY"]])
+    Idl2Sci = np.array([coeffs["Idl2SciX"], coeffs["Idl2SciY"]])
+
+    # Get detector parameters
+    det_plane = optics.planes[-1]
+    pixelscale = (det_plane.pixelscale / det_plane.oversample).value
+
+    # Get detector position (This one is weird for some reason)
+    det_pos = np.array(instrument.detector_position)
+    if det_plane.fov_pixels.value % 2 == 0:
+        det_pos += 0.5  # even arrays must be at a half pixel
+    SciCens = np.array(det_pos)
+
+    # Generate Class
+    return SiafDistortion(
+        aper.Sci2IdlDeg,
+        Sci2Idl,
+        Idl2Sci,
+        SciRefs,
+        SciCens,
+        SciScales,
+        pixelscale,
+        det_plane.oversample,
+    )
