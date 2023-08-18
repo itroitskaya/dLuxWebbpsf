@@ -8,6 +8,9 @@ from poppy.zernike import hexike_basis
 from jax import Array
 
 
+__all__ = ["generate_jwst_hexike_basis"]
+
+
 def generate_jwst_hexike_basis(
     npix: int = 1024,
     radial_orders: Array | list = None,
