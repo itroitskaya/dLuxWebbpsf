@@ -7,8 +7,7 @@ import dLux as dl
 from jax import Array
 
 import scipy.special
-from dLuxWebbpsf.utils import j1, get_pixel_positions
-
+from dLuxWebbpsf.utils import j1, get_pixel_positions, generate_jwst_hexike_basis
 
 __all__ = [
     "JWSTPrimary",
@@ -54,6 +53,80 @@ class JWSTPrimary(dl.Optic):
         return wavefront.set(["amplitude", "phase"], [amplitude, phase])
 
 
+class JWSTAberratedPrimary(JWSTPrimary, dl.optical_layers.BasisLayer):
+    """
+    Child class of JWSTPrimary which adds the functionality to store a Hexike basis and coefficients.
+    """
+
+    def __init__(
+        self,
+        transmission: Array,
+        opd: Array,
+        radial_orders: Array | list = None,
+        npix: int = 1024,
+        noll_indices: Array | list = None,
+        coefficients: Array | list = None,
+        AMI: bool = False,
+        mask: bool = False,
+    ):
+        """
+        Parameters
+        ----------
+        transmission: Array
+            The Array of transmission values to be applied to the input
+            wavefront.
+        opd : Array
+            The Array of OPD values to be applied to the input wavefront.
+        radial_orders : Array
+            The radial orders of the zernike polynomials to be used for the
+            aberrations. Input of [0, 1] would give [Piston, Tilt X, Tilt Y],
+            [1, 2] would be [Tilt X, Tilt Y, Defocus, Astig X, Astig Y], etc.
+            The order must be increasing but does not have to be consecutive.
+            If you want to specify specific zernikes across radial orders the
+            noll_indices argument should be used instead.
+        noll_indices : Array
+            The zernike noll indices to be used for the aberrations. [1, 2, 3]
+            would give [Piston, Tilt X, Tilt Y], [2, 3, 4] would be [Tilt X,
+            Tilt Y, Defocus].
+        coefficients : Array
+            The coefficients to be applied to the Hexike basis vectors.
+        AMI : bool
+            Whether to use the AMI segments or not.
+        mask : bool
+            Whether to apodise the basis with the AMI mask or not. Recommended is False.
+        """
+
+        super().__init__(transmission=transmission, opd=opd)
+        self.basis = generate_jwst_hexike_basis(
+            radial_orders=radial_orders,
+            noll_indices=noll_indices,
+            npix=npix,
+            AMI=AMI,
+            mask=mask,
+        )
+        self.coefficients = coefficients
+
+    @property
+    def basis_opd(self):
+        """
+        Returns the OPD calculated from the basis and coefficients.
+        """
+        return self.calculate(self.basis, self.coefficients)
+
+    def __call__(self, wavefront):
+        # Apply transmission and normalise
+        amplitude = wavefront.amplitude * self.transmission
+        amplitude /= np.linalg.norm(amplitude)
+
+        total_opd = self.opd + self.basis_opd
+
+        # Apply phase
+        phase = wavefront.phase + wavefront.wavenumber * total_opd
+
+        # Update and return
+        return wavefront.set(["amplitude", "phase"], [amplitude, phase])
+
+
 class CoronOcculter(OpticalLayer):
     """
     Layer for efficient propagation through a coronagraphic occulter.
@@ -77,9 +150,7 @@ class CoronOcculter(OpticalLayer):
         self.pad = int(pad)
 
         if not isinstance(occulter, OpticalLayer):
-            raise TypeError(
-                "The occulter must be an instance of a dLux OpticalLayer."
-            )
+            raise TypeError("The occulter must be an instance of a dLux OpticalLayer.")
 
         self.occulter = occulter
 
@@ -98,8 +169,7 @@ class CoronOcculter(OpticalLayer):
             return getattr(self.occulter, name)
         else:
             raise AttributeError(
-                f"'{self.__class__.__name__}' object has no "
-                f"attribute '{name}'"
+                f"'{self.__class__.__name__}' object has no " f"attribute '{name}'"
             )
 
 
@@ -120,9 +190,7 @@ class NircamCirc(OpticalLayer):
     def __call__(self, wavefront):
         # jax.debug.print("wavelength: {}", vars(wavefront))
 
-        amplitude = self.get_transmission(
-            wavefront.wavelength, wavefront.pixel_scale
-        )
+        amplitude = self.get_transmission(wavefront.wavelength, wavefront.pixel_scale)
         return wavefront * amplitude
 
     def get_transmission(self, wavelength, pixelscale):
@@ -192,7 +260,7 @@ class NircamCirc(OpticalLayer):
 class NIRCamFieldAndWavelengthDependentAberration(OpticalLayer):
     opd: None
     amplitude: None
-    
+
     zernike_coeffs: None
     defocus_zern: None
     tilt_zern: None
@@ -204,10 +272,10 @@ class NIRCamFieldAndWavelengthDependentAberration(OpticalLayer):
     ctilt_model: None
     tilt_offset: None
     tilt_ref_offset: None
-    
+
     def __init__(self, instrument, amplitude, opd, zernike_coeffs):
         super().__init__()
-        
+
         self.amplitude = np.asarray(amplitude, dtype=float)
         self.opd = np.asarray(opd, dtype=float)
         self.zernike_coeffs = np.asarray(zernike_coeffs, dtype=float)
@@ -226,9 +294,7 @@ class NIRCamFieldAndWavelengthDependentAberration(OpticalLayer):
         # The relative wavelength dependence of these focus models are very
         # similar for coronagraphic mode in the Zemax optical prescription,
         # so we opt to use the same focus model in both imaging and coronagraphy.
-        defocus_to_rmswfe = (
-            -1.09746e7
-        )  # convert from mm defocus to meters (WFE)
+        defocus_to_rmswfe = -1.09746e7  # convert from mm defocus to meters (WFE)
         sw_focus_cf = (
             np.array(
                 [
@@ -256,8 +322,7 @@ class NIRCamFieldAndWavelengthDependentAberration(OpticalLayer):
         # NIRCam target acquisition filters (3.35um for LW and 2.1um for SW)
         sw_ctilt_cf = np.array([125.849834, -289.018704]) / 1e9
         lw_ctilt_cf = (
-            np.array([146.827501, -2000.965222, 8385.546158, -11101.658322])
-            / 1e9
+            np.array([146.827501, -2000.965222, 8385.546158, -11101.658322]) / 1e9
         )
 
         # Get the representation of focus in the same Zernike basis as used for
@@ -287,9 +352,7 @@ class NIRCamFieldAndWavelengthDependentAberration(OpticalLayer):
             if is_nrc_coron:
                 self.opd_ref_focus = np.polyval(self.focusmodel, opd_ref_wave)
             else:
-                self.opd_ref_focus = (
-                    1.206e-7  # Not coronagraphy (e.g., imaging)
-                )
+                self.opd_ref_focus = 1.206e-7  # Not coronagraphy (e.g., imaging)
 
         # If F323N or F212N, then no focus offset necessary
         if ("F323N" in instrument.filter) or ("F212N" in instrument.filter):
@@ -308,13 +371,12 @@ class NIRCamFieldAndWavelengthDependentAberration(OpticalLayer):
                 ta_ref_wave = 3.35
 
             self.tilt_ref_offset = np.polyval(self.ctilt_model, ta_ref_wave)
-        
-            #print("opd_ref_focus: {}", self.opd_ref_focus)
-            #print("tilt_ref_offset: {}", self.tilt_ref_offset)
+
+            # print("opd_ref_focus: {}", self.opd_ref_focus)
+            # print("tilt_ref_offset: {}", self.tilt_ref_offset)
 
             self.tilt_offset = (
-                lambda wl: np.polyval(self.ctilt_model, wl)
-                - self.tilt_ref_offset
+                lambda wl: np.polyval(self.ctilt_model, wl) - self.tilt_ref_offset
             )
         else:
             self.tilt_ref_offset = None
@@ -328,7 +390,7 @@ class NIRCamFieldAndWavelengthDependentAberration(OpticalLayer):
 
         mod_opd = self.opd - self.deltafocus(wavelength) * self.defocus_zern
         mod_opd = mod_opd + self.tilt_offset(wavelength) * self.tilt_zern
-        
+
         wavefront = wavefront * self.amplitude
-        
+
         return wavefront.add_opd(mod_opd)
