@@ -11,6 +11,7 @@ from dLuxWebbpsf.utils import j1, get_pixel_positions, generate_jwst_hexike_basi
 
 __all__ = [
     "JWSTPrimary",
+    "JWSTAberratedPrimary",
     "NircamCirc",
     "CoronOcculter",
     "NIRCamFieldAndWavelengthDependentAberration",
