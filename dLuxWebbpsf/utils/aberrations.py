@@ -73,12 +73,10 @@ def generate_jwst_hexike_basis(
     niriss = webbpsf.NIRISS()
 
     if AMI:
-        if mask is None:
-            amplitude_plane = 0
+        if mask is False:
             seg_rad = const.JWST_SEGMENT_RADIUS
             shifts = np.zeros(2)  # no shift for full pupil
-        elif mask is not None:
-            amplitude_plane = 3
+        elif mask:
             # "The hexagonal sub-apertures are 0.82 m from one flat side of the hexagon to the other projected onto
             # the primary, as designed." - Rachel Cooper, 15/8/2023
             seg_rad = (0.82 / 2) / 0.8660254038
@@ -98,7 +96,6 @@ def generate_jwst_hexike_basis(
         niriss.pupil_mask = "MASK_NRM"
 
     elif not AMI:
-        amplitude_plane = 0
         seg_rad = const.JWST_SEGMENT_RADIUS  # TODO check for overlapping pixels
         shifts = np.zeros(2)  # no shift for full pupil
         keys = const.SEGNAMES_WSS  # all mirror segments
@@ -110,17 +107,16 @@ def generate_jwst_hexike_basis(
     seg_cens = dict(const.JWST_PRIMARY_SEGMENT_CENTERS)
     pscale = niriss_osys.planes[0].pixelscale.value * 1024 / npix
 
-    # Scale mask
-    transmission = niriss_osys.planes[amplitude_plane].amplitude
-    transmission = dLux.utils.scale_array(transmission, npix, 1)
-
     # Generating a basis for each segment (all terms up to highest noll index)
     basis = []
     for key in keys:  # cycling through segments
         centre = np.array(seg_cens[key]) - shifts
         rhos, thetas = numpy.array(
             dlu.pixel_coordinates(
-                (npix, npix), pscale, offsets=tuple(centre), polar=True
+                npixels=(npix, npix),
+                pixel_scales=pscale,
+                offsets=tuple(centre),
+                polar=True,
             )
         )
         basis.append(
@@ -128,9 +124,12 @@ def generate_jwst_hexike_basis(
         )  # appending basis
 
     # reducing back down to request noll indices
-    basis = np.array(basis)[:, noll_indices, ...]
+    basis = np.array(basis)[:, noll_indices - 1, ...]
 
-    if mask:
+    if mask and AMI is True:
+        # Scale mask
+        transmission = niriss_osys.planes[3].amplitude
+        transmission = dLux.utils.scale_array(transmission, npix, 1)
         basis = np.flip(
             basis, axis=(2, 3)
         )  # need to apply flip for AMI as plane 1 is a flip
