@@ -58,7 +58,7 @@ def generate_jwst_hexike_basis(
         for order in radial_orders:
             start = dlu.triangular_number(order)
             stop = dlu.triangular_number(order + 1)
-            noll_indices.append(np.arange(start, stop) + 1)
+            noll_indices.append(np.arange(start, stop))
         noll_indices = np.concatenate(noll_indices)
 
     elif noll_indices is None:
@@ -67,7 +67,7 @@ def generate_jwst_hexike_basis(
     if noll_indices is not None:
         noll_indices = np.array(noll_indices, dtype=int)
 
-    nterms = int(noll_indices.max())
+    nterms = int(noll_indices.max()) + 1
 
     # Get webbpsf model
     niriss = webbpsf.NIRISS()
