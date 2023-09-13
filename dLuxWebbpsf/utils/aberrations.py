@@ -4,11 +4,11 @@ import jax.numpy as np
 import dLux
 import numpy
 import dLux.utils as dlu
-from poppy.zernike import hexike_basis
+from poppy.zernike import hexike_basis, zernike_basis
 from jax import Array
 
 
-__all__ = ["generate_jwst_hexike_basis"]
+__all__ = ["generate_jwst_hexike_basis", "generate_jwst_secondary_basis"]
 
 
 def generate_jwst_hexike_basis(
@@ -58,7 +58,7 @@ def generate_jwst_hexike_basis(
         for order in radial_orders:
             start = dlu.triangular_number(order)
             stop = dlu.triangular_number(order + 1)
-            noll_indices.append(np.arange(start, stop))
+            noll_indices.append(np.arange(start, stop) + 1)
         noll_indices = np.concatenate(noll_indices)
 
     elif noll_indices is None:
@@ -67,7 +67,7 @@ def generate_jwst_hexike_basis(
     if noll_indices is not None:
         noll_indices = np.array(noll_indices, dtype=int)
 
-    nterms = int(noll_indices.max()) + 1
+    nterms = int(noll_indices.max())
 
     # Get webbpsf model
     niriss = webbpsf.NIRISS()
@@ -110,7 +110,7 @@ def generate_jwst_hexike_basis(
     # Generating a basis for each segment (all terms up to highest noll index)
     basis = []
     for key in keys:  # cycling through segments
-        centre = np.array(seg_cens[key]) - shifts
+        centre = np.array([-1, 1]) * (np.array(seg_cens[key]) - shifts)
         rhos, thetas = numpy.array(
             dlu.pixel_coordinates(
                 npixels=(npix, npix),
@@ -136,3 +136,66 @@ def generate_jwst_hexike_basis(
         basis *= transmission
 
     return basis
+
+
+def generate_jwst_secondary_basis(
+    npix: int = 1024,
+    radial_orders: Array | list = None,
+    noll_indices: Array | list = None,
+):
+    """
+    Generates a basis for each segment of the JWST secondary mirror.
+
+    Parameters
+    ----------
+    npix : int
+        Number of pixels in the output basis.
+    radial_orders : Array = None
+        The radial orders of the zernike polynomials to be used for the
+        aberrations. Input of [0, 1] would give [Piston, Tilt X, Tilt Y],
+        [1, 2] would be [Tilt X, Tilt Y, Defocus, Astig X, Astig Y], etc.
+        The order must be increasing but does not have to be consecutive.
+        If you want to specify specific zernikes across radial orders the
+        noll_indices argument should be used instead.
+    noll_indices : Array = None
+        The zernike noll indices to be used for the aberrations. [1, 2, 3]
+        would give [Piston, Tilt X, Tilt Y], [2, 3, 4] would be [Tilt X,
+        Tilt Y, Defocus].
+
+    Returns
+    -------
+    basis : Array
+        Array of shape (nsegments, nterms, npix, npix) containing the basis for each segment.
+    """
+
+    # Aberrations
+    if radial_orders is not None:
+        radial_orders = np.array(radial_orders)
+
+        if (radial_orders < 0).any():
+            raise ValueError("Radial orders must be >= 0")
+
+        noll_indices = []
+        for order in radial_orders:
+            start = dlu.triangular_number(order)
+            stop = dlu.triangular_number(order + 1)
+            noll_indices.append(np.arange(start, stop) + 1)
+        noll_indices = np.concatenate(noll_indices)
+
+    elif noll_indices is None:
+        raise ValueError("Must specify either radial_orders or noll_indices")
+
+    if noll_indices is not None:
+        noll_indices = np.array(noll_indices, dtype=int)
+
+    nterms = int(noll_indices.max())
+
+    rhos, thetas = numpy.array(
+        dlu.pixel_coordinates((npix, npix), pixel_scales=2 / npix, polar=True)
+    )
+    secondary_basis = zernike_basis(nterms, npix, rhos, thetas, outside=0.0)
+
+    # reducing back down to requested noll indices
+    secondary_basis = np.array(secondary_basis)[noll_indices - 1, ...]
+
+    return secondary_basis
