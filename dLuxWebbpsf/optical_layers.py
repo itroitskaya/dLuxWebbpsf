@@ -1,4 +1,5 @@
 import jax.numpy as np
+from jax import tree_util as jtu
 
 import poppy
 import scipy
@@ -7,7 +8,7 @@ import dLux as dl
 from jax import Array
 
 import scipy.special
-from dLuxWebbpsf.utils import j1, get_pixel_positions, generate_jwst_hexike_basis
+from dLuxWebbpsf.utils import j1, get_pixel_positions, generate_jwst_hexike_basis, generate_jwst_secondary_basis
 
 __all__ = [
     "JWSTPrimary",
@@ -27,9 +28,9 @@ class JWSTPrimary(dl.Optic):
     """
 
     def __init__(
-        self: OpticalLayer,
-        transmission: Array = None,
-        opd: Array = None,
+            self: OpticalLayer,
+            transmission: Array = None,
+            opd: Array = None,
     ):
         """
         Parameters
@@ -60,15 +61,17 @@ class JWSTAberratedPrimary(JWSTPrimary, dl.optical_layers.BasisLayer):
     """
 
     def __init__(
-        self,
-        transmission: Array,
-        opd: Array,
-        radial_orders: Array | list = None,
-        npix: int = 1024,
-        noll_indices: Array | list = None,
-        coefficients: Array | list = None,
-        AMI: bool = False,
-        mask: bool = False,
+            self,
+            transmission: Array,
+            opd: Array,
+            coefficients: Array | list = None,
+            radial_orders: Array | list = None,
+            noll_indices: Array | list = None,
+            secondary_coefficients: Array | list = None,
+            secondary_radial_orders: Array | list = None,
+            secondary_noll_indices: Array | list = None,
+            AMI: bool = False,
+            mask: bool = False,
     ):
         """
         Parameters
@@ -78,41 +81,75 @@ class JWSTAberratedPrimary(JWSTPrimary, dl.optical_layers.BasisLayer):
             wavefront.
         opd : Array
             The Array of OPD values to be applied to the input wavefront.
-        radial_orders : Array
-            The radial orders of the zernike polynomials to be used for the
-            aberrations. Input of [0, 1] would give [Piston, Tilt X, Tilt Y],
+        coefficients: Array | list = None
+            The coefficients of the hexike polynomials to be used for the
+            primary mirror abberations.
+        radial_orders : Array | list = None
+            The radial orders of the hexike polynomials to be used for the
+            primary mirror abberations. Eg. Input of [0, 1] would give [Piston, Tilt X, Tilt Y],
             [1, 2] would be [Tilt X, Tilt Y, Defocus, Astig X, Astig Y], etc.
             The order must be increasing but does not have to be consecutive.
-            If you want to specify specific zernikes across radial orders the
+            If you want to specify specific hexikes across radial orders the
             noll_indices argument should be used instead.
-        noll_indices : Array
-            The zernike noll indices to be used for the aberrations. [1, 2, 3]
+        noll_indices : Array | list = None
+            The hexike noll indices to be used for the primary mirror abberations. [1, 2, 3]
             would give [Piston, Tilt X, Tilt Y], [2, 3, 4] would be [Tilt X,
             Tilt Y, Defocus].
-        coefficients : Array
-            The coefficients to be applied to the Hexike basis vectors.
+        secondary_coefficients: Array | list = None
+            The coefficients of the hexike polynomials to be used for the
+            secondary mirror abberations.
+        secondary_radial_orders : Array | list = None
+            The radial orders of the hexike polynomials to be used for the
+            secondary mirror abberations.
+        secondary_noll_indices : Array | list = None
+            The hexike noll indices to be used for the secondary mirror abberations.
         AMI : bool
-            Whether to use the AMI segments or not.
+            Whether to operate in AMI mode (True) or full-pupil (False).
         mask : bool
-            Whether to apodise the basis with the AMI mask or not. Recommended is False.
+            Whether to apodise the basis with the AMI transmission mask or not. Recommended is False.
         """
-
+        npix: int = transmission.shape[0]
         super().__init__(transmission=transmission, opd=opd)
-        self.basis = generate_jwst_hexike_basis(
+
+        # Dealing with the radial_orders and noll_indices arguments
+        if radial_orders is not None and noll_indices is not None:
+            print("Warning: Both radial_orders and noll_indices provided. Using noll_indices.")
+            radial_orders = None
+
+        primary_basis = generate_jwst_hexike_basis(
             radial_orders=radial_orders,
             noll_indices=noll_indices,
             npix=npix,
             AMI=AMI,
             mask=mask,
         )
-        self.coefficients = coefficients
+
+        if secondary_radial_orders is not None and secondary_noll_indices is not None:
+            print("Warning: Both secondary_radial_orders and secondary_noll_indices provided. Using "
+                  "secondary_noll_indices.")
+            secondary_radial_orders = None
+
+        if secondary_coefficients is not None:
+            secondary_basis = generate_jwst_secondary_basis(
+                radial_orders=secondary_radial_orders,
+                noll_indices=secondary_noll_indices,
+                npix=npix,
+            )
+            self.coefficients = {'primary': coefficients, 'secondary': secondary_coefficients}
+            self.basis = {'primary': primary_basis, 'secondary': secondary_basis}
+
+        else:
+            self.coefficients = np.array(coefficients)
+            self.basis = np.array(primary_basis)
 
     @property
     def basis_opd(self):
         """
         Returns the OPD calculated from the basis and coefficients.
         """
-        return self.calculate(self.basis, self.coefficients)
+
+        outputs = jtu.tree_map(lambda b, c: self.calculate(b, c), (self.basis,), (self.coefficients,))
+        return np.array(jtu.tree_flatten(outputs)[0]).sum(0)
 
     def __call__(self, wavefront):
         # Apply transmission and normalise
@@ -212,7 +249,7 @@ class NircamCirc(OpticalLayer):
 
         # jax.debug.print("x: {}", x[s:-s,s:-s][0].tolist())
 
-        r = np.sqrt(x**2 + y**2)
+        r = np.sqrt(x ** 2 + y ** 2)
         # jax.debug.print("r: {}", r[s:-s,s:-s][0].tolist())
 
         sigmar = self.sigma * r
@@ -284,7 +321,7 @@ class NIRCamFieldAndWavelengthDependentAberration(OpticalLayer):
         # Check for coronagraphy
         pupil_mask = instrument._pupil_mask
         is_nrc_coron = (pupil_mask is not None) and (
-            ("LYOT" in pupil_mask.upper()) or ("MASK" in pupil_mask.upper())
+                ("LYOT" in pupil_mask.upper()) or ("MASK" in pupil_mask.upper())
         )
 
         # Polynomial equations fit to defocus model. Wavelength-dependent focus
@@ -297,22 +334,22 @@ class NIRCamFieldAndWavelengthDependentAberration(OpticalLayer):
         # so we opt to use the same focus model in both imaging and coronagraphy.
         defocus_to_rmswfe = -1.09746e7  # convert from mm defocus to meters (WFE)
         sw_focus_cf = (
-            np.array(
-                [
-                    -5.169185169,
-                    50.62919436,
-                    -201.5444129,
-                    415.9031962,
-                    -465.9818413,
-                    265.843112,
-                    -59.64330811,
-                ]
-            )
-            / defocus_to_rmswfe
+                np.array(
+                    [
+                        -5.169185169,
+                        50.62919436,
+                        -201.5444129,
+                        415.9031962,
+                        -465.9818413,
+                        265.843112,
+                        -59.64330811,
+                    ]
+                )
+                / defocus_to_rmswfe
         )
         lw_focus_cf = (
-            np.array([0.175718713, -1.100964635, 0.986462016, 1.641692934])
-            / defocus_to_rmswfe
+                np.array([0.175718713, -1.100964635, 0.986462016, 1.641692934])
+                / defocus_to_rmswfe
         )
 
         # Coronagraphic tilt (`ctilt`) offset model
@@ -323,7 +360,7 @@ class NIRCamFieldAndWavelengthDependentAberration(OpticalLayer):
         # NIRCam target acquisition filters (3.35um for LW and 2.1um for SW)
         sw_ctilt_cf = np.array([125.849834, -289.018704]) / 1e9
         lw_ctilt_cf = (
-            np.array([146.827501, -2000.965222, 8385.546158, -11101.658322]) / 1e9
+                np.array([146.827501, -2000.965222, 8385.546158, -11101.658322]) / 1e9
         )
 
         # Get the representation of focus in the same Zernike basis as used for
