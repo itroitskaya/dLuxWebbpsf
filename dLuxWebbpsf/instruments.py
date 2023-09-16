@@ -5,7 +5,7 @@ import jax.numpy as np
 import webbpsf
 
 from dLuxWebbpsf.optical_layers import *
-from dLuxWebbpsf.basis import jwst_hexike_bases
+from dLuxWebbpsf.basis import jwst_hexike_basis
 
 __all__ = ["NIRCam"]
 
@@ -73,7 +73,7 @@ class NIRCam(dl.instruments.Instrument):
         
         if phase_retrieval_terms > 0:
             pscale = pupil_plane.pixelscale.value * wavefront_downsample
-            hmask, basis = jwst_hexike_bases(phase_retrieval_terms, npix, pscale)
+            hmask, basis = jwst_hexike_basis(phase_retrieval_terms, npix, pscale)
             basis_flat = basis.reshape((phase_retrieval_terms*18, npix, npix))
             coeffs = np.zeros((basis_flat.shape[0]))
 
