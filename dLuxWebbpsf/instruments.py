@@ -266,12 +266,10 @@ class NIRISS(JWST):
         dsamp = lambda x: dlu.downsample(x, wavefront_downsample)
         npix = 1024 // wavefront_downsample
 
-        # Primary mirror - note this class automatically flips about the y-axis
+        # Primary mirror
         layers = [
             (
-                dLuxWebbpsf.optical_layers.JWSTPrimary(
-                    dsamp(planes[0].amplitude), dsamp(planes[0].opd)
-                ),
+                JWSTPrimary(dsamp(planes[0].amplitude), dsamp(planes[0].opd)),
                 "pupil",
             ),
             (dl.Flip(0), "InvertY"),
@@ -319,7 +317,6 @@ class NIRISS(JWST):
             diameter=planes[0].pixelscale.to("m/pix").value * planes[0].npix,
             layers=layers,
         )
-
 
 class NIRCam(JWST):
     """
@@ -387,26 +384,28 @@ class NIRCam(JWST):
 
         diameter = planes[0].pixelscale.to("m/pix").value * planes[0].npix
 
-        # Primary mirror - note this class automatically flips about the y-axis
-        layers = [
-            (
-                dLuxWebbpsf.optical_layers.JWSTPrimary(
-                    dsamp(planes[0].amplitude), dsamp(planes[0].opd)
-                ),
-                "pupil",
-            ),
-        ]
+        # Primary mirror
+        layers = []
+
+        pupil_transmission = dsamp(planes[0].amplitude)
+        pupil_opd = dsamp(planes[0].opd)
 
         if phase_retrieval_terms > 0:
             # Add phase retrieval layer
             pscale = planes[0].pixelscale.value * wavefront_downsample
+            print(f'pscale: {pscale}')
+
             hmask, basis = jwst_hexike_basis(phase_retrieval_terms, npix, pscale)
             basis_flat = basis.reshape((phase_retrieval_terms*18, npix, npix))
             coeffs = np.zeros((basis_flat.shape[0]))
 
-            layers.extend([
-                (JWSTBasis(hmask, basis_flat, coeffs), "JWSTBasis")
-            ])
+            pupil_transmission = pupil_transmission * hmask
+
+            pupil = JWSTSimplePrimary(pupil_transmission, pupil_opd, basis_flat, coeffs)
+
+            layers.append((pupil, "pupil"))
+        else:
+            layers.append((dl.Optic(pupil_transmission, pupil_opd), "pupil"))
 
         layers.extend([
             #Plane 1: Coordinate Inversion in y axis
@@ -446,11 +445,10 @@ class NIRCam(JWST):
         # Now the Fourier transform to the detector
         osamp = planes[-1].oversample
         det_npix = (planes[-1].fov_pixels * osamp).value
-        pscale = (planes[-1].pixelscale).to("arcsec/pix").value
-        self.pixelscale = pscale
+        self.pixelscale = (planes[-1].pixelscale).to("arcsec/pix")
+        pscale = dlu.arcsec_to_rad(self.pixelscale.value / osamp)
 
-        # SIC! Half of the oversample logic goes inside MTF class (pscale), and half is left out
-        layers.append(dl.MFT(det_npix, dlu.arcsec_to_rad(pscale)))
+        layers.append(dl.MFT(det_npix, pscale))
 
         # Finally, construct the actual Optics object
         return dl.LayeredOptics(

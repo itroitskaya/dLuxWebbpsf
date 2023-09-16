@@ -35,7 +35,7 @@ def generate_jwst_hexike_basis(
     noll_indices : Array = None
         The zernike noll indices to be used for the aberrations. [1, 2, 3]
         would give [Piston, Tilt X, Tilt Y], [2, 3, 4] would be [Tilt X,
-        Tilt Y, Defocus.
+        Tilt Y, Defocus].
     AMI : bool
         Whether to use the AMI mask or not.
     mask : bool
