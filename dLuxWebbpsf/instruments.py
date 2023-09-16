@@ -2,17 +2,23 @@ from __future__ import annotations
 import jax.numpy as np
 import dLux as dl
 import dLux.utils as dlu
-import dLuxWebbpsf
+import jax.numpy as np
 import webbpsf
 
+import dLuxWebbpsf
+from dLuxWebbpsf.optical_layers import *
+from dLuxWebbpsf.basis import jwst_hexike_basis
 
 __all__ = ["NIRISS", "NIRCam"]
-
 
 class JWST(dl.Instrument):
     """
     Class for the James Webb Space Telescope.
     """
+    
+    filter_wavelengths: None
+    filter_weights: None
+    pixelscale: None
 
     def __init__(
         self: JWST,
@@ -30,6 +36,12 @@ class JWST(dl.Instrument):
         nlambda=None,  # int: number of wavelengths
         clean=False,  # bool: When true, only the measured primary mirror aberrations are applied.
         wavefront_downsample=1,  # int: downsampling factor for the wavefront
+
+        monochromatic=None, # float: wavelength in microns
+        offset=None, # tuple: offset in radians
+        phase_retrieval_terms=0, # Number of terms in phase retrieval layer
+        flux=1, #float: flux of point source
+        source=None, # Source: dLux source object
     ):
         # Get configured instrument and optical system
         instrument, osys = self._configure_instrument(
@@ -54,10 +66,11 @@ class JWST(dl.Instrument):
             clean,
             instrument,
             wavefront_downsample,
+            phase_retrieval_terms,
         )
 
         # Construct source object
-        source = (self._construct_source(instrument, nlambda), "source")
+        source = (self._construct_source(instrument, source, nlambda, monochromatic, offset, flux), "source")
 
         # Construct Detector Object
         detector = self._construct_detector(instrument, osys)
@@ -123,29 +136,32 @@ class JWST(dl.Instrument):
         # Get the optical system - Note we calculate the PSF here because
         # otherwise some optical planes do not have its attributes populated,
         # namely the CLEARP mask transmission.
+        # SIC! Check that these planes are not wavelength-dependent. There should be no need to call calc_psf!
         optics = webb_osys.get_optical_system(**kwargs)
-        optics.calc_psf()
+        # optics.calc_psf()
         return webb_osys, optics
 
     def _construct_detector(self, instrument, optics):
         """Constructs a detector object for the instrument."""
 
+        options = instrument.options
+        layers = []
+
         # Jitter - webbpsf default units are arcseconds, so we assume that psf
         # units are also arcseconds
-        options = instrument.options
         if "jitter" in options.keys() and options["jitter"] == "gaussian":
-            layers = [
+            layers.append(
                 (
                     dLuxWebbpsf.ApplyJitter(
                         sigma=instrument.options["jitter_sigma"]
                     ),
                     "jitter",
                 )
-            ]
+            )
 
         # Rotation - probably want to eventually change units to degrees
-        angle = instrument._detector_geom_info.aperture.V3IdlYAngle
-        layers.append(dLuxWebbpsf.Rotate(angle=dlu.deg_to_rad(-angle)))
+        #angle = instrument._detector_geom_info.aperture.V3IdlYAngle
+        #layers.append(dLuxWebbpsf.Rotate(angle=dlu.deg_to_rad(-angle)))
 
         # Distortion
         if "add_distortion" not in options.keys() or options["add_distortion"]:
@@ -166,14 +182,29 @@ class JWST(dl.Instrument):
         # Construct detector
         return dl.LayeredDetector(layers)
 
-    def _construct_source(self, instrument, nlambda):
+    def _construct_source(self, instrument, source, nlambda, monochromatic, offset, flux):
         """Constructs a source object for the instrument."""
+
+        if nlambda is None or nlambda == 0:
+            nlambda = instrument._get_default_nlambda(instrument.filter)
+
         wavelengths, weights = instrument._get_weights(
             source=None,
             nlambda=nlambda,
+            monochromatic=monochromatic
         )
-        return dl.PointSource(wavelengths=wavelengths, weights=weights)
 
+        self.filter_wavelengths = wavelengths
+        self.filter_weights = weights
+
+        if source is None:
+            # Generate point source if no source is provided
+            position = [0, 0]
+            if offset is not None:
+                position = offset
+            source = dl.PointSource(wavelengths=wavelengths, weights=weights, position=position, flux=flux)
+
+        return source
 
 class NIRISS(JWST):
     """
@@ -195,6 +226,12 @@ class NIRISS(JWST):
         nlambda=None,  # int: number of wavelengths
         clean=False,  # bool: When true, only the measured primary mirror aberrations are applied.
         wavefront_downsample=1,  # int: downsampling factor for the wavefront
+
+        monochromatic=None, # float: wavelength in microns
+        offset=None, # tuple: offset in radians
+        phase_retrieval_terms=0, # Number of terms in phase retrieval layer
+        flux=1, #float: flux of point source
+        source=None, # Source: dLux source object
     ):
         super().__init__(
             "NIRISS",
@@ -221,6 +258,7 @@ class NIRISS(JWST):
         clean,
         instrument,
         wavefront_downsample,
+        phase_retrieval_terms,
     ):
         """Constructs an optics object for the instrument."""
 
@@ -303,6 +341,12 @@ class NIRCam(JWST):
         nlambda=None,  # int: number of wavelengths
         clean=False,  # bool: When true, only the measured primary mirror aberrations are applied.
         wavefront_downsample=1,  # int: downsampling factor for the wavefront
+
+        monochromatic=None, # float: wavelength in microns
+        offset=None, # tuple: offset in radians
+        phase_retrieval_terms=0, # Number of terms in phase retrieval layer
+        flux=1, #float: flux of point source
+        source=None, # Source: dLux source object
     ):
         super().__init__(
             "NIRCam",
@@ -319,6 +363,10 @@ class NIRCam(JWST):
             nlambda=nlambda,
             clean=clean,
             wavefront_downsample=wavefront_downsample,
+            offset=offset,
+            phase_retrieval_terms=phase_retrieval_terms,
+            flux=flux,
+            source=source
         )
 
     def _construct_optics(
@@ -329,12 +377,15 @@ class NIRCam(JWST):
         clean,
         instrument,
         wavefront_downsample,
+        phase_retrieval_terms
     ):
         """Constructs an optics object for the instrument."""
 
         # Construct downsampler
         dsamp = lambda x: dlu.downsample(x, wavefront_downsample)
         npix = 1024 // wavefront_downsample
+
+        diameter = planes[0].pixelscale.to("m/pix").value * planes[0].npix
 
         # Primary mirror - note this class automatically flips about the y-axis
         layers = [
@@ -344,14 +395,27 @@ class NIRCam(JWST):
                 ),
                 "pupil",
             ),
-            (dl.Flip(0), "InvertY"),
         ]
+
+        if phase_retrieval_terms > 0:
+            # Add phase retrieval layer
+            pscale = planes[0].pixelscale.value * wavefront_downsample
+            hmask, basis = jwst_hexike_basis(phase_retrieval_terms, npix, pscale)
+            basis_flat = basis.reshape((phase_retrieval_terms*18, npix, npix))
+            coeffs = np.zeros((basis_flat.shape[0]))
+
+            layers.extend([
+                (JWSTBasis(hmask, basis_flat, coeffs), "JWSTBasis")
+            ])
+
+        layers.extend([
+            #Plane 1: Coordinate Inversion in y axis
+            (dl.Flip(0), "InvertY")
+        ])
 
         # Coronagraphic masks
         # TODO: This should explicity check for the correct mask (ie CIRCLYOT)
-        if image_mask is not None:
-            diameter = planes[0].pixelscale.to("m/pix").value * planes[0].npix
-
+        if pupil_mask is not None and image_mask is not None:
             occulter = dLuxWebbpsf.NircamCirc(
                 planes[2].sigma, diameter, npix, planes[2].oversample
             )
@@ -361,11 +425,9 @@ class NIRCam(JWST):
                     "image_mask",
                 )
             )
-
-        # Pupil mask, note this assumes there is no OPD in that optic. Index
-        # from the end of the array so we dont have to check for image masks.
-        layers.append((dl.Optic(dsamp(planes[-3].amplitude)), "pupil_mask"))
-
+            # Pupil mask, note this assumes there is no OPD in that optic.
+            layers.append((dl.Optic(dsamp(planes[3].amplitude)), "pupil_mask"))
+        
         # If 'clean', then we don't want to apply pre-calc'd aberrations
         if not clean:
             # NOTE: We keep amplitude here because the circumscribed circle clips
@@ -373,16 +435,11 @@ class NIRCam(JWST):
             # https://github.com/spacetelescope/webbpsf/issues/667, Long term we
             # are unlikely to want this.
 
-            # Not sure what this downsample is doing...
-            aberration_mask = dsamp(planes[-2].amplitude)
-            aberration_opd = dsamp(planes[-2].opd)
-            aberration_zernikes = planes[-2].zernike_coeffs
-
             FDA = dLuxWebbpsf.NIRCamFieldAndWavelengthDependentAberration(
                 instrument,
-                aberration_mask,
-                aberration_opd,
-                aberration_zernikes,
+                dsamp(planes[-2].amplitude),
+                dsamp(planes[-2].opd),
+                planes[-2].zernike_coeffs,
             )
             layers.append((FDA, "aberrations"))
 
@@ -390,11 +447,14 @@ class NIRCam(JWST):
         osamp = planes[-1].oversample
         det_npix = (planes[-1].fov_pixels * osamp).value
         pscale = (planes[-1].pixelscale).to("arcsec/pix").value
-        layers.append(dLuxWebbpsf.MFT(det_npix, pscale, oversample=osamp))
+        self.pixelscale = pscale
+
+        # SIC! Half of the oversample logic goes inside MTF class (pscale), and half is left out
+        layers.append(dl.MFT(det_npix, dlu.arcsec_to_rad(pscale)))
 
         # Finally, construct the actual Optics object
         return dl.LayeredOptics(
-            wf_npixels=planes[0].npix,
-            diameter=planes[0].pixelscale.to("m/pix").value * planes[0].npix,
+            wf_npixels=npix,
+            diameter=diameter,
             layers=layers,
         )
