@@ -1,9 +1,11 @@
 from __future__ import annotations
 import dLux as dl
 import dLux.utils as dlu
+import jax.numpy as np
 import webbpsf
 
 from dLuxWebbpsf.optical_layers import *
+from dLuxWebbpsf.basis import jwst_hexike_bases
 
 __all__ = ["NIRCam"]
 
@@ -11,6 +13,7 @@ class NIRCam(dl.instruments.Instrument):
 
     filter_wavelengths: None
     filter_weights: None
+    pixelscale: None
 
     def __init__(self,
                  *,
@@ -29,6 +32,8 @@ class NIRCam(dl.instruments.Instrument):
                  nlambda=None, # int: number of wavelengths
                  monochromatic=None, # float: wavelength in microns
                  offset=None, # tuple: offset in arcseconds
+                 phase_retrieval_terms=0, # Number of terms in phase retrieval layer
+                 flux=1,
                  source=None, # Source: dLux source object
                  ):
         
@@ -64,11 +69,23 @@ class NIRCam(dl.instruments.Instrument):
 
         optical_layers = [
             #Plane 0: Pupil plane: JWST Entrance Pupil
-            (dl.Optic(pupil_mask, pupil_opd), "Pupil"),
+            (dl.Optic(pupil_mask, pupil_opd), "Pupil")]
+        
+        if phase_retrieval_terms > 0:
+            pscale = pupil_plane.pixelscale.value * wavefront_downsample
+            hmask, basis = jwst_hexike_bases(phase_retrieval_terms, npix, pscale)
+            basis_flat = basis.reshape((phase_retrieval_terms*18, npix, npix))
+            coeffs = np.zeros((basis_flat.shape[0]))
 
+            optical_layers.extend([
+                (JWSTBasis(hmask, basis_flat, coeffs), "JWSTBasis")
+            ])
+
+
+        optical_layers.extend([
             #Plane 1: Coordinate Inversion in y axis
             (InvertY(), "InvertY")
-        ]
+        ])
 
         # Define coronagraphic planes
 
@@ -108,9 +125,11 @@ class NIRCam(dl.instruments.Instrument):
         #Plane 5: Detector plane: NIRCam detector
 
         detector_plane = nircam.planes[-1]
+        self.pixelscale = detector_plane.pixelscale
+
         det_npix = (detector_plane.fov_pixels * detector_plane.oversample).value
         pscale = (detector_plane.pixelscale / detector_plane.oversample).to('radian/pix').value
-        #print(f'pixel scale: {pscale}')
+        print(f'pixel scale: {pscale}')
         optical_layers.extend([
             dl.MFT(det_npix, pscale)
         ])
@@ -142,7 +161,7 @@ class NIRCam(dl.instruments.Instrument):
             if offset is not None:
                 position = offset
             # wavelengths are still required even if they are discarded
-            source = dl.PointSource(wavelengths=wavelengths, spectrum=spectrum, position=position)
+            source = dl.PointSource(wavelengths=wavelengths, spectrum=spectrum, position=position, flux=flux)
 
         # Initialize the instrument
         super().__init__(optics=optics, sources=(source, 'source'), detector=detector)

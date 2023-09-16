@@ -8,7 +8,7 @@ import scipy.special
 from dLuxWebbpsf.utils import j1, get_pixel_positions
 
 __all__ = ["InvertY", "InvertX", "InvertXY", "Pad", "Crop", "NircamCirc", \
-           "NIRCamFieldAndWavelengthDependentAberration"]
+           "NIRCamFieldAndWavelengthDependentAberration", "JWSTBasis"]
 
 class InvertY(OpticalLayer):
     def __init__(self):
@@ -253,3 +253,23 @@ class NIRCamFieldAndWavelengthDependentAberration(OpticalLayer):
         wavefront = wavefront * self.amplitude
         
         return wavefront.add_opd(mod_opd)
+
+class JWSTBasis(OpticalLayer):
+    basis: None
+    coeffs: None
+    mask: None
+    
+    def __init__(self, mask, basis, coeffs):
+        super().__init__()
+        self.mask = np.asarray(mask, dtype=float)
+        self.basis = np.asarray(basis, dtype=float)
+        self.coeffs = np.asarray(coeffs, dtype=float)
+    
+    def __call__(self, wavefront):
+        coeffs_reshaped = self.coeffs.reshape(self.coeffs.shape[0], 1, 1)
+        
+        opd_arr = self.basis * coeffs_reshaped
+        opd = opd_arr.sum(0)
+
+        wavefront = wavefront * self.mask
+        return wavefront.add_opd(opd)
