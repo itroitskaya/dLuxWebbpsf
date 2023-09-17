@@ -16,7 +16,8 @@ __all__ = [
     "NircamCirc",
     "CoronOcculter",
     "NIRCamFieldAndWavelengthDependentAberration",
-    "JWSTSimplePrimary"
+    "JWSTBasis",
+    "JWSTSimplePrimary",
 ]
 
 
@@ -24,14 +25,17 @@ class JWSTPrimary(dl.Optic):
     """
     A class used to represent the JWST primary mirror. This is essentially a
     wrapper around the dLux.Optic class that simply enforces the normalisation
-    at this plane, inverts the y axis automatically, and is slightly more
-    efficient than the native implementation.
+    at this plane, and is slightly more efficient than the native
+    implementation.
     """
+
+    pixelscale: float
 
     def __init__(
             self: OpticalLayer,
             transmission: Array = None,
             opd: Array = None,
+            pixelscale: float = None
     ):
         """
         Parameters
@@ -41,7 +45,10 @@ class JWSTPrimary(dl.Optic):
             wavefront.
         opd : Array, metres = None
             The Array of OPD values to be applied to the input wavefront.
+        pixelscale : float, m/pix = None
+            Pixel scale of the optical planes
         """
+        self.pixelscale = pixelscale
         super().__init__(transmission=transmission, opd=opd, normalise=True)
 
     def __call__(self, wavefront):
@@ -165,27 +172,45 @@ class JWSTAberratedPrimary(JWSTPrimary, dl.optical_layers.BasisLayer):
         # Update and return
         return wavefront.set(["amplitude", "phase"], [amplitude, phase])
 
-class JWSTSimplePrimary(OpticalLayer):
-    basis: None
-    coeffs: None
-    transmission: None
-    opd: None
-    
-    def __init__(self, transmission, opd, basis, coeffs):
-        super().__init__()
-        self.transmission = np.asarray(transmission, dtype=float)
-        self.opd = np.asarray(opd, dtype=float)
-        self.basis = np.asarray(basis, dtype=float)
-        self.coeffs = np.asarray(coeffs, dtype=float)
-    
-    def __call__(self, wavefront):
-        coeffs_reshaped = self.coeffs.reshape(self.coeffs.shape[0], 1, 1)
-        
-        opd_arr = self.basis * coeffs_reshaped
-        opd = self.opd + opd_arr.sum(0)
+class JWSTSimplePrimary(JWSTPrimary, dl.optical_layers.BasisLayer):
 
-        wavefront = wavefront * self.transmission
-        return wavefront.add_opd(opd)
+    def __init__(
+            self,
+            transmission,
+            opd,
+            pixelscale,
+            basis = None,
+            coefficients = None
+    ):
+        super().__init__(transmission, opd, pixelscale)
+        
+        if basis is None:
+            basis = np.array([np.zeros_like(opd)])
+        
+        if coefficients is None:
+            coefficients = np.zeros(1)
+
+        self.basis = np.asarray(basis, dtype=float)
+        self.coefficients = np.asarray(coefficients, dtype=float)
+
+    @property
+    def basis_opd(self):
+        """
+        Returns the OPD calculated from the basis and coefficients.
+        """
+
+        outputs = jtu.tree_map(lambda b, c: self.calculate(b, c), (self.basis,), (self.coefficients,))
+        return np.array(jtu.tree_flatten(outputs)[0]).sum(0)
+
+    def __call__(self, wavefront):
+        # Apply transmission and normalise
+        amplitude = wavefront.amplitude * self.transmission
+        amplitude /= np.linalg.norm(amplitude)
+
+        total_opd = self.opd + self.basis_opd
+        phase = wavefront.phase + wavefront.wavenumber * total_opd
+
+        return wavefront.set(["amplitude", "phase"], [amplitude, phase])
 
 
 class JWSTBasis(OpticalLayer):
