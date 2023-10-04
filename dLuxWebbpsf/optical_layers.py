@@ -6,6 +6,7 @@ import poppy
 import scipy
 
 import dLux as dl
+import dLux.utils as dlu
 from dLux.optical_layers import OpticalLayer
 
 import scipy.special
@@ -286,9 +287,10 @@ class NircamCirc(OpticalLayer):
         # jax.debug.print("wavelength start: {}", wavelength)
         # jax.debug.print("pixelscale rad: {}", pixelscale)
 
-        pixelscale = pixelscale * 648000.0 / np.pi  # from rad to arcsec
+        # TODO: Check this is correct in latest version of dLux
+        pixelscale = dlu.rad_to_arcsec(pixelscale)
 
-        # pixelscale = wavelength * 648000.0 / np.pi
+        # pixelscale = dlu.rad_to_arcsec(wavelength)
         # pixelscale = pixelscale / self.diam / self.oversample
 
         # jax.debug.print("pixelscale arcsec: {}", pixelscale)
