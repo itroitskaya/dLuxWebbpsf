@@ -7,7 +7,8 @@ __all__ = ["get_pixel_positions"]
 
 Array = jax.numpy.ndarray
 
-def get_pixel_positions(npixels, pixel_scales = None, indexing = 'xy'):
+
+def get_pixel_positions(npixels, pixel_scales=None, indexing='xy'):
     # Turn inputs into tuples
     if isinstance(npixels, int):
         npixels = (npixels,)
@@ -19,8 +20,8 @@ def get_pixel_positions(npixels, pixel_scales = None, indexing = 'xy'):
                              "is an int.")
         else:
             pixel_scales = (pixel_scales,)
-        
-    # Check input 
+
+    # Check input
     else:
         if pixel_scales is None:
             pixel_scales = tuple([1.]*len(npixels))
@@ -31,15 +32,14 @@ def get_pixel_positions(npixels, pixel_scales = None, indexing = 'xy'):
         else:
             if len(pixel_scales) != len(npixels):
                 raise ValueError("pixel_scales must have the same length as npixels.")
-    
+
     def pixel_fn(n, scale):
         pix = np.arange(n) - n / 2.
         pix *= scale
         return pix
-    
+
     pixels = tree_map(pixel_fn, npixels, pixel_scales)
 
     positions = np.array(np.meshgrid(*pixels, indexing=indexing))
 
     return np.squeeze(positions)
-

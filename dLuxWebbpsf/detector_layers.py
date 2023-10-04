@@ -2,8 +2,9 @@ import jax.numpy as np
 import dLux as dl
 import dLux.utils as dlu
 from jax import Array
-from dLuxWebbpsf import utils
 from jax.scipy.ndimage import map_coordinates
+
+from . import utils
 
 
 """
