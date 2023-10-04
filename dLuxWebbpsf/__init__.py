@@ -3,19 +3,35 @@ __version__ = "0.0.1"
 
 # Import as modules
 from . import optical_layers
-from . import optics
+from . import instruments
+from . import propagators
+from . import detector_layers
+from . import basis
 
 # Import core functions from modules
-from .optics         import *
-from .optical_layers       import *
-from .instruments   import *
+from .optical_layers import *
+from .instruments import *
+from .propagators import *
+from .detector_layers import *
+from .basis import *
+
 
 # Add to __all__
-__all__ = optics.__all__ + optical_layers.__all__ + instruments.__all__
+__all__ = (
+      optical_layers.__all__
+    + instruments.__all__
+    + propagators.__all__
+    + detector_layers.__all__
+    + basis.__all__
+)
+
 
 # Check for 64-bit
 from jax import config
+
 if not config.x64_enabled:
-    print("dLux: Jax is running in 32-bit, to enable 64-bit visit: "
-          "https://jax.readthedocs.io/en/latest/notebooks/"
-          "Common_Gotchas_in_JAX.html#double-64bit-precision")
+    print(
+        "dLux: Jax is running in 32-bit, to enable 64-bit visit: "
+        "https://jax.readthedocs.io/en/latest/notebooks/"
+        "Common_Gotchas_in_JAX.html#double-64bit-precision"
+    )
