@@ -32,17 +32,15 @@ class ApplyJitter(dl.detector_layers.DetectorLayer):
         super().__init__()
         self.sigma = float(sigma)
 
-    def __call__(self, image):
+    def apply(self, image):
         # Convert sigma to pixels, note this assumes sigma has the same units
         # as the pixel scale
         jitter_pix = self.sigma / image.pixel_scale
-        jittered = utils.gaussian_filter_correlate(
-            image.image, jitter_pix, ksize=3
-        )
+        jittered = utils.gaussian_filter_correlate(image.image, jitter_pix, ksize=3)
         return image.set("image", jittered)
 
 
-class Rotate(dl.RotateDetector):
+class Rotate(dl.Rotate):
     """
     A simple rotation layer that overwrites the default dLux rotation layer
     in order to apply a cubic-spline interpolation.
@@ -52,7 +50,7 @@ class Rotate(dl.RotateDetector):
         super().__init__(*args, **kwargs)
         self.order = 3
 
-    def __call__(self, image):
+    def apply(self, image):
         rotated = utils.rotate(image.image, self.angle, order=3)
         return image.set("image", rotated)
 
@@ -210,7 +208,7 @@ class SiafDistortion(dl.detector_layers.DetectorLayer):
         # Apply distortion
         return map_coordinates(image, new_coords, order=1)
 
-    def __call__(self, image):
+    def apply(self, image):
         image_out = self.Idl2Sci_transform(image.image)
         return image.set("image", image_out)
 

@@ -5,7 +5,6 @@ import dLux.utils as dlu
 import jax.numpy as np
 import webbpsf
 
-from . import propagators
 from .detector_layers import *
 from .optical_layers import *
 from .basis import generate_jwst_basis
@@ -13,14 +12,14 @@ from .basis import generate_jwst_basis
 __all__ = ["NIRISS", "NIRCam"]
 
 
-class JWST(dl.Instrument):
+class JWST(dl.Telescope):
     """
     Class for the James Webb Space Telescope.
     """
 
     filter_wavelengths: None
     filter_weights: None
-    pixelscale: None
+    # pixelscale: None
 
     def __init__(
         self: JWST,
@@ -38,7 +37,6 @@ class JWST(dl.Instrument):
         nlambda=None,  # int: number of wavelengths
         clean=False,  # bool: When true, only the measured primary mirror aberrations are applied.
         wavefront_downsample=1,  # int: downsampling factor for the wavefront
-
         monochromatic=None,  # float: wavelength in microns
         offset=None,  # tuple: offset in radians
         phase_retrieval_terms=0,  # Number of terms in phase retrieval layer
@@ -72,19 +70,20 @@ class JWST(dl.Instrument):
         )
 
         # Construct source object
-        source = (self._construct_source(
+        source = self._construct_source(
             instrument=instrument,
             source=source,
             nlambda=nlambda,
             monochromatic=monochromatic,
             offset=offset,
-            flux=flux), "source")
+            flux=flux,
+        )
 
         # Construct Detector Object
         detector = self._construct_detector(instrument, osys)
 
         # Construct the instrument
-        super().__init__(optics=optics, sources=source, detector=detector)
+        super().__init__(optics=optics, source=source, detector=detector)
 
     @staticmethod
     def _configure_instrument(
@@ -163,9 +162,7 @@ class JWST(dl.Instrument):
         if "jitter" in options.keys() and options["jitter"] == "gaussian":
             layers.append(
                 (
-                    ApplyJitter(
-                        sigma=instrument.options["jitter_sigma"]
-                    ),
+                    ApplyJitter(sigma=instrument.options["jitter_sigma"]),
                     "jitter",
                 )
             )
@@ -188,29 +185,21 @@ class JWST(dl.Instrument):
         # )
 
         # Downsample - assumes last plane is detector
-        layers.append(dl.IntegerDownsample(optics.planes[-1].oversample))
+        layers.append(dl.Downsample(optics.planes[-1].oversample))
 
         # Construct detector
         return dl.LayeredDetector(layers)
 
     def _construct_source(
-            self,
-            *,
-            instrument,
-            source,
-            nlambda,
-            monochromatic,
-            offset,
-            flux):
+        self, *, instrument, source, nlambda, monochromatic, offset, flux
+    ):
         """Constructs a source object for the instrument."""
 
         if nlambda is None or nlambda == 0:
             nlambda = instrument._get_default_nlambda(instrument.filter)
 
         wavelengths, weights = instrument._get_weights(
-            source=None,
-            nlambda=nlambda,
-            monochromatic=monochromatic
+            source=None, nlambda=nlambda, monochromatic=monochromatic
         )
 
         self.filter_wavelengths = wavelengths
@@ -221,7 +210,9 @@ class JWST(dl.Instrument):
             position = [0, 0]
             if offset is not None:
                 position = offset
-            source = dl.PointSource(wavelengths=wavelengths, weights=weights, position=position, flux=flux)
+            source = dl.PointSource(
+                wavelengths=wavelengths, weights=weights, position=position, flux=flux
+            )
 
         return source
 
@@ -246,7 +237,6 @@ class NIRISS(JWST):
         nlambda=None,  # int: number of wavelengths
         clean=False,  # bool: When true, only the measured primary mirror aberrations are applied.
         wavefront_downsample=1,  # int: downsampling factor for the wavefront
-
         monochromatic=None,  # float: wavelength in microns
         offset=None,  # tuple: offset in radians
         phase_retrieval_terms=0,  # Number of terms in phase retrieval layer
@@ -283,16 +273,18 @@ class NIRISS(JWST):
         """Constructs an optics object for the instrument."""
 
         # Construct downsampler
-        def dsamp(x): return dlu.downsample(x, wavefront_downsample)
+        def dsamp(x):
+            return dlu.downsample(x, wavefront_downsample)
+
         npix = 1024 // wavefront_downsample
 
         # Primary mirror
         layers = [
             (
-                JWSTPrimary(dsamp(planes[0].amplitude), dsamp(planes[0].opd)),
                 "pupil",
+                JWSTPrimary(dsamp(planes[0].amplitude), dsamp(planes[0].opd)),
             ),
-            (dl.Flip(0), "InvertY"),
+            ("InvertY", dl.Flip(0)),
         ]
 
         # If 'clean', then we don't want to apply pre-calc'd aberrations
@@ -302,7 +294,7 @@ class NIRISS(JWST):
             # https://github.com/spacetelescope/webbpsf/issues/667, Long term we
             # are unlikely to want this.
             FDA = dl.Optic(dsamp(planes[2].amplitude), dsamp(planes[2].opd))
-            layers.append((FDA, "aberrations"))
+            layers.append(("aberrations", FDA))
 
         # No image mask layers yet for NIRISS
         if image_mask is not None:
@@ -320,22 +312,17 @@ class NIRISS(JWST):
         elif instrument.pupil_mask == "MASK_NRM":
             layer = dl.Optic(dsamp(pupil_plane.amplitude))
         else:
-            raise NotImplementedError(
-                "Only CLEARP and MASK_NRM are supported."
-            )
-        layers.append((layer, "pupil_mask"))
-
-        # Now the Fourier transform to the detector
-        osamp = planes[-1].oversample
-        det_npix = (planes[-1].fov_pixels * osamp).value
-        pscale = (planes[-1].pixelscale).to("arcsec/pix").value
-        layers.append(propagators.MFT(det_npix, pscale, oversample=osamp))
+            raise NotImplementedError("Only CLEARP and MASK_NRM are supported.")
+        layers.append(("pupil_mask", layer))
 
         # Finally, construct the actual Optics object
-        return dl.LayeredOptics(
+        return dl.AngularOpticalSystem(
             wf_npixels=npix,
             diameter=planes[0].pixelscale.to("m/pix").value * planes[0].npix,
             layers=layers,
+            psf_npixels=planes[-1].fov_pixels.value,
+            psf_pixel_scale=(planes[-1].pixelscale).to("arcsec/pix").value,
+            oversample=planes[-1].oversample,
         )
 
 
@@ -359,7 +346,6 @@ class NIRCam(JWST):
         nlambda=None,  # int: number of wavelengths
         clean=False,  # bool: When true, only the measured primary mirror aberrations are applied.
         wavefront_downsample=1,  # int: downsampling factor for the wavefront
-
         monochromatic=None,  # float: wavelength in microns
         offset=None,  # tuple: offset in radians
         phase_retrieval_terms=0,  # Number of terms in phase retrieval layer
@@ -385,7 +371,7 @@ class NIRCam(JWST):
             offset=offset,
             phase_retrieval_terms=phase_retrieval_terms,
             flux=flux,
-            source=source
+            source=source,
         )
 
     def _construct_optics(
@@ -396,12 +382,13 @@ class NIRCam(JWST):
         clean,
         instrument,
         wavefront_downsample,
-        phase_retrieval_terms
+        phase_retrieval_terms,
     ):
         """Constructs an optics object for the instrument."""
 
         # Construct downsampler
-        def dsamp(x): return dlu.downsample(x, wavefront_downsample)
+        def dsamp(x):
+            return dlu.downsample(x, wavefront_downsample)
 
         diameter = planes[0].pixelscale.to("m/pix").value * planes[0].npix
         npix = planes[0].npix // wavefront_downsample
@@ -418,37 +405,39 @@ class NIRCam(JWST):
             # Add phase retrieval layer
 
             hmask, basis = generate_jwst_basis(phase_retrieval_terms, npix, pscale)
-            basis_flat = basis.reshape((phase_retrieval_terms*18, npix, npix))
+            basis_flat = basis.reshape((phase_retrieval_terms * 18, npix, npix))
             coeffs = np.zeros((basis_flat.shape[0]))
 
             pupil_transmission = pupil_transmission * hmask
 
-            pupil = JWSTSimplePrimary(pupil_transmission, pupil_opd, pscale, basis_flat, coeffs)
+            pupil = JWSTSimplePrimary(
+                pupil_transmission, pupil_opd, pscale, basis_flat, coeffs
+            )
 
-            layers.append((pupil, "pupil"))
+            layers.append(("pupil", pupil))
         else:
             pupil = JWSTSimplePrimary(pupil_transmission, pupil_opd, pscale)
-            layers.append((pupil, "pupil"))
+            layers.append(("pupil", pupil))
 
-        layers.extend([
-            # Plane 1: Coordinate Inversion in y axis
-            (dl.Flip(0), "InvertY")
-        ])
+        layers.extend(
+            [
+                # Plane 1: Coordinate Inversion in y axis
+                ("InvertY", dl.Flip(0))
+            ]
+        )
 
         # Coronagraphic masks
         # TODO: This should explicity check for the correct mask (ie CIRCLYOT)
         if pupil_mask is not None and image_mask is not None:
-            occulter = NircamCirc(
-                planes[2].sigma, diameter, npix, planes[2].oversample
-            )
+            occulter = NircamCirc(planes[2].sigma, diameter, npix, planes[2].oversample)
             layers.append(
                 (
-                    CoronOcculter(occulter, planes[2].oversample),
                     "image_mask",
+                    CoronOcculter(occulter, planes[2].oversample),
                 )
             )
             # Pupil mask, note this assumes there is no OPD in that optic.
-            layers.append((dl.Optic(dsamp(planes[3].amplitude)), "pupil_mask"))
+            layers.append(("pupil_mask", dl.Optic(dsamp(planes[3].amplitude))))
 
         # If 'clean', then we don't want to apply pre-calc'd aberrations
         if not clean:
@@ -463,19 +452,14 @@ class NIRCam(JWST):
                 dsamp(planes[-2].opd),
                 planes[-2].zernike_coeffs,
             )
-            layers.append((FDA, "aberrations"))
-
-        # Now the Fourier transform to the detector
-        osamp = planes[-1].oversample
-        det_npix = (planes[-1].fov_pixels * osamp).value
-        self.pixelscale = (planes[-1].pixelscale).to("arcsec/pix")
-        det_pscale = dlu.arcsec_to_rad(self.pixelscale.value / osamp)
-
-        layers.append(dl.MFT(det_npix, det_pscale))
+            layers.append(("aberrations", FDA))
 
         # Finally, construct the actual Optics object
-        return dl.LayeredOptics(
+        return dl.AngularOpticalSystem(
             wf_npixels=npix,
             diameter=diameter,
             layers=layers,
+            psf_npixels=planes[-1].fov_pixels.value,
+            psf_pixel_scale=(planes[-1].pixelscale).to("arcsec/pix").value,
+            oversample=planes[-1].oversample,
         )

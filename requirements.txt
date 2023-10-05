@@ -1,4 +1,4 @@
-dlux==0.13.2
+dlux>=0.14
 jax
 webbpsf
 numpy
