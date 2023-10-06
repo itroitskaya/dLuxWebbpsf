@@ -161,15 +161,12 @@ class JWST(dl.Telescope):
         # units are also arcseconds
         if "jitter" in options.keys() and options["jitter"] == "gaussian":
             layers.append(
-                (
-                    ApplyJitter(sigma=instrument.options["jitter_sigma"]),
-                    "jitter",
-                )
+                ("jitter", ApplyJitter(sigma=instrument.options["jitter_sigma"]))
             )
 
         # Rotation - probably want to eventually change units to degrees
         # angle = instrument._detector_geom_info.aperture.V3IdlYAngle
-        # layers.append(Rotate(angle=dlu.deg_to_rad(-angle)))
+        # layers.append(Rotate(angle=dlu.deg2rad(-angle)))
 
         # Distortion
         if "add_distortion" not in options.keys() or options["add_distortion"]:
