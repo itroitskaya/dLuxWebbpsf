@@ -434,6 +434,7 @@ class NIRCamFieldAndWavelengthDependentAberration(OpticalLayer):
         if instrument.channel.upper() == "SHORT":
             self.focusmodel = sw_focus_cf
             opd_ref_wave = 2.12
+            self.opd_ref_focus = 0
         else:
             self.focusmodel = lw_focus_cf
             opd_ref_wave = 3.23
