@@ -22,8 +22,8 @@ __all__ = [
 
 class ApplyJitter(dl.detector_layers.DetectorLayer):
     """
-    Applies a gaussian jitter to the image. This is designed to match the
-    scipy.ndimage.gaussian_filter function in the same vein of webbpsf.
+    Applies a gaussian jitter to the PSF. This is designed to match the
+    scipy.ndPSF.gaussian_filter function in the same vein of webbpsf.
     """
 
     sigma: Array
@@ -32,17 +32,15 @@ class ApplyJitter(dl.detector_layers.DetectorLayer):
         super().__init__()
         self.sigma = float(sigma)
 
-    def __call__(self, image):
+    def apply(self, PSF):
         # Convert sigma to pixels, note this assumes sigma has the same units
         # as the pixel scale
-        jitter_pix = self.sigma / image.pixel_scale
-        jittered = utils.gaussian_filter_correlate(
-            image.image, jitter_pix, ksize=3
-        )
-        return image.set("image", jittered)
+        jitter_pix = self.sigma / PSF.pixel_scale
+        jittered = utils.gaussian_filter_correlate(PSF.data, jitter_pix, ksize=3)
+        return PSF.set("data", jittered)
 
 
-class Rotate(dl.RotateDetector):
+class Rotate(dl.Rotate):
     """
     A simple rotation layer that overwrites the default dLux rotation layer
     in order to apply a cubic-spline interpolation.
@@ -52,9 +50,9 @@ class Rotate(dl.RotateDetector):
         super().__init__(*args, **kwargs)
         self.order = 3
 
-    def __call__(self, image):
-        rotated = utils.rotate(image.image, self.angle, order=3)
-        return image.set("image", rotated)
+    def apply(self, PSF):
+        rotated = utils.rotate(PSF.data, self.angle, order=3)
+        return PSF.set("data", rotated)
 
 
 def gen_powers(degree):
@@ -181,15 +179,15 @@ class SiafDistortion(dl.detector_layers.DetectorLayer):
             )
         )
 
-    def Idl2Sci_transform(self, image):
+    def Idl2Sci_transform(self, PSF):
         """
-        Applies the Idl2Sci distortion to an input image.
+        Applies the Idl2Sci distortion to an input PSF.
 
-        Q: Are xsci_cen and ysci_cen the psf centers or the image centers?
+        Q: Are xsci_cen and ysci_cen the psf centers or the PSF centers?
         This should be tested as it could require source position input
         """
-        # Create a coordiante array for the input image
-        coords = dlu.pixel_coordinates(image.shape)
+        # Create a coordiante array for the input PSF
+        coords = dlu.nd_coords(PSF.shape)
 
         # Scale and shift to get to sci coordinates
         coords /= (self.SciScales / self.pixelscale)[:, None, None]
@@ -200,7 +198,7 @@ class SiafDistortion(dl.detector_layers.DetectorLayer):
         idl_cens = self.sci_to_idl(self.SciCens)
 
         # Shift, scale and shift back to get to pixel coordinates
-        centres = (np.array(image.shape) - 1) / 2
+        centres = (np.array(PSF.shape) - 1) / 2
         coords_distort = (coords_idl - idl_cens) / self.pixelscale
         coords_distort += centres[:, None, None]
 
@@ -208,11 +206,11 @@ class SiafDistortion(dl.detector_layers.DetectorLayer):
         new_coords = np.flip(coords_distort, 0)
 
         # Apply distortion
-        return map_coordinates(image, new_coords, order=1)
+        return map_coordinates(PSF, new_coords, order=1)
 
-    def __call__(self, image):
-        image_out = self.Idl2Sci_transform(image.image)
-        return image.set("image", image_out)
+    def apply(self, PSF):
+        PSF_out = self.Idl2Sci_transform(PSF.data)
+        return PSF.set("data", PSF_out)
 
 
 def DistortionFromSiaf(instrument, optics):

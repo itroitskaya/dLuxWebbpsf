@@ -7,7 +7,7 @@ import scipy
 
 import dLux as dl
 import dLux.utils as dlu
-from dLux.optical_layers import OpticalLayer
+from dLux.layers.optical_layers import OpticalLayer
 
 import scipy.special
 from .utils import j1, get_pixel_positions
@@ -34,10 +34,10 @@ class JWSTPrimary(dl.Optic):
     pixelscale: float
 
     def __init__(
-            self: OpticalLayer,
-            transmission: Array = None,
-            opd: Array = None,
-            pixelscale: float = None
+        self: OpticalLayer,
+        transmission: Array = None,
+        opd: Array = None,
+        pixelscale: float = None,
     ):
         """
         Parameters
@@ -53,7 +53,7 @@ class JWSTPrimary(dl.Optic):
         self.pixelscale = pixelscale
         super().__init__(transmission=transmission, opd=opd, normalise=True)
 
-    def __call__(self, wavefront):
+    def apply(self, wavefront):
         # Apply transmission and normalise
         amplitude = wavefront.amplitude * self.transmission
         amplitude /= np.linalg.norm(amplitude)
@@ -71,17 +71,17 @@ class JWSTAberratedPrimary(JWSTPrimary, dl.optical_layers.BasisLayer):
     """
 
     def __init__(
-            self,
-            transmission: Array,
-            opd: Array,
-            coefficients: Array | list = None,
-            radial_orders: Array | list = None,
-            noll_indices: Array | list = None,
-            secondary_coefficients: Array | list = None,
-            secondary_radial_orders: Array | list = None,
-            secondary_noll_indices: Array | list = None,
-            AMI: bool = False,
-            mask: bool = False,
+        self,
+        transmission: Array,
+        opd: Array,
+        coefficients: Array | list = None,
+        radial_orders: Array | list = None,
+        noll_indices: Array | list = None,
+        secondary_coefficients: Array | list = None,
+        secondary_radial_orders: Array | list = None,
+        secondary_noll_indices: Array | list = None,
+        AMI: bool = False,
+        mask: bool = False,
     ):
         """
         Parameters
@@ -123,7 +123,9 @@ class JWSTAberratedPrimary(JWSTPrimary, dl.optical_layers.BasisLayer):
 
         # Dealing with the radial_orders and noll_indices arguments
         if radial_orders is not None and noll_indices is not None:
-            print("Warning: Both radial_orders and noll_indices provided. Using noll_indices.")
+            print(
+                "Warning: Both radial_orders and noll_indices provided. Using noll_indices."
+            )
             radial_orders = None
 
         primary_basis = generate_jwst_hexike_basis(
@@ -135,8 +137,10 @@ class JWSTAberratedPrimary(JWSTPrimary, dl.optical_layers.BasisLayer):
         )
 
         if secondary_radial_orders is not None and secondary_noll_indices is not None:
-            print("Warning: Both secondary_radial_orders and secondary_noll_indices provided. Using "
-                  "secondary_noll_indices.")
+            print(
+                "Warning: Both secondary_radial_orders and secondary_noll_indices provided. Using "
+                "secondary_noll_indices."
+            )
             secondary_radial_orders = None
 
         if secondary_coefficients is not None:
@@ -145,8 +149,11 @@ class JWSTAberratedPrimary(JWSTPrimary, dl.optical_layers.BasisLayer):
                 noll_indices=secondary_noll_indices,
                 npix=npix,
             )
-            self.coefficients = {'primary': coefficients, 'secondary': secondary_coefficients}
-            self.basis = {'primary': primary_basis, 'secondary': secondary_basis}
+            self.coefficients = {
+                "primary": coefficients,
+                "secondary": secondary_coefficients,
+            }
+            self.basis = {"primary": primary_basis, "secondary": secondary_basis}
 
         else:
             self.coefficients = np.array(coefficients)
@@ -158,10 +165,12 @@ class JWSTAberratedPrimary(JWSTPrimary, dl.optical_layers.BasisLayer):
         Returns the OPD calculated from the basis and coefficients.
         """
 
-        outputs = jtu.tree_map(lambda b, c: self.calculate(b, c), (self.basis,), (self.coefficients,))
+        outputs = jtu.tree_map(
+            lambda b, c: self.eval_basis(b, c), (self.basis,), (self.coefficients,)
+        )
         return np.array(jtu.tree_flatten(outputs)[0]).sum(0)
 
-    def __call__(self, wavefront):
+    def apply(self, wavefront):
         # Apply transmission and normalise
         amplitude = wavefront.amplitude * self.transmission
         amplitude /= np.linalg.norm(amplitude)
@@ -176,20 +185,12 @@ class JWSTAberratedPrimary(JWSTPrimary, dl.optical_layers.BasisLayer):
 
 
 class JWSTSimplePrimary(JWSTPrimary, dl.optical_layers.BasisLayer):
-
-    def __init__(
-            self,
-            transmission,
-            opd,
-            pixelscale,
-            basis = None,
-            coefficients = None
-    ):
+    def __init__(self, transmission, opd, pixelscale, basis=None, coefficients=None):
         super().__init__(transmission, opd, pixelscale)
-        
+
         if basis is None:
             basis = np.array([np.zeros_like(opd)])
-        
+
         if coefficients is None:
             coefficients = np.zeros(1)
 
@@ -201,11 +202,9 @@ class JWSTSimplePrimary(JWSTPrimary, dl.optical_layers.BasisLayer):
         """
         Returns the OPD calculated from the basis and coefficients.
         """
+        return self.eval_basis()
 
-        outputs = jtu.tree_map(lambda b, c: self.calculate(b, c), (self.basis,), (self.coefficients,))
-        return np.array(jtu.tree_flatten(outputs)[0]).sum(0)
-
-    def __call__(self, wavefront):
+    def apply(self, wavefront):
         # Apply transmission and normalise
         amplitude = wavefront.amplitude * self.transmission
         amplitude /= np.linalg.norm(amplitude)
@@ -243,7 +242,7 @@ class CoronOcculter(OpticalLayer):
 
         self.occulter = occulter
 
-    def __call__(self, wavefront):
+    def apply(self, wavefront):
         """
         Applies the coronagraphic occulter to the input wavefront.
         """
@@ -276,7 +275,7 @@ class NircamCirc(OpticalLayer):
 
         super().__init__()
 
-    def __call__(self, wavefront):
+    def apply(self, wavefront):
         # jax.debug.print("wavelength: {}", vars(wavefront))
 
         amplitude = self.get_transmission(wavefront.wavelength, wavefront.pixel_scale)
@@ -288,9 +287,9 @@ class NircamCirc(OpticalLayer):
         # jax.debug.print("pixelscale rad: {}", pixelscale)
 
         # TODO: Check this is correct in latest version of dLux
-        pixelscale = dlu.rad_to_arcsec(pixelscale)
+        pixelscale = dlu.rad2arcsec(pixelscale)
 
-        # pixelscale = dlu.rad_to_arcsec(wavelength)
+        # pixelscale = dlu.rad2arcsec(wavelength)
         # pixelscale = pixelscale / self.diam / self.oversample
 
         # jax.debug.print("pixelscale arcsec: {}", pixelscale)
@@ -301,7 +300,7 @@ class NircamCirc(OpticalLayer):
 
         # jax.debug.print("x: {}", x[s:-s,s:-s][0].tolist())
 
-        r = np.sqrt(x ** 2 + y ** 2)
+        r = np.sqrt(x**2 + y**2)
         # jax.debug.print("r: {}", r[s:-s,s:-s][0].tolist())
 
         sigmar = self.sigma * r
@@ -373,7 +372,7 @@ class NIRCamFieldAndWavelengthDependentAberration(OpticalLayer):
         # Check for coronagraphy
         pupil_mask = instrument._pupil_mask
         is_nrc_coron = (pupil_mask is not None) and (
-                ("LYOT" in pupil_mask.upper()) or ("MASK" in pupil_mask.upper())
+            ("LYOT" in pupil_mask.upper()) or ("MASK" in pupil_mask.upper())
         )
 
         # Polynomial equations fit to defocus model. Wavelength-dependent focus
@@ -386,22 +385,22 @@ class NIRCamFieldAndWavelengthDependentAberration(OpticalLayer):
         # so we opt to use the same focus model in both imaging and coronagraphy.
         defocus_to_rmswfe = -1.09746e7  # convert from mm defocus to meters (WFE)
         sw_focus_cf = (
-                np.array(
-                    [
-                        -5.169185169,
-                        50.62919436,
-                        -201.5444129,
-                        415.9031962,
-                        -465.9818413,
-                        265.843112,
-                        -59.64330811,
-                    ]
-                )
-                / defocus_to_rmswfe
+            np.array(
+                [
+                    -5.169185169,
+                    50.62919436,
+                    -201.5444129,
+                    415.9031962,
+                    -465.9818413,
+                    265.843112,
+                    -59.64330811,
+                ]
+            )
+            / defocus_to_rmswfe
         )
         lw_focus_cf = (
-                np.array([0.175718713, -1.100964635, 0.986462016, 1.641692934])
-                / defocus_to_rmswfe
+            np.array([0.175718713, -1.100964635, 0.986462016, 1.641692934])
+            / defocus_to_rmswfe
         )
 
         # Coronagraphic tilt (`ctilt`) offset model
@@ -412,7 +411,7 @@ class NIRCamFieldAndWavelengthDependentAberration(OpticalLayer):
         # NIRCam target acquisition filters (3.35um for LW and 2.1um for SW)
         sw_ctilt_cf = np.array([125.849834, -289.018704]) / 1e9
         lw_ctilt_cf = (
-                np.array([146.827501, -2000.965222, 8385.546158, -11101.658322]) / 1e9
+            np.array([146.827501, -2000.965222, 8385.546158, -11101.658322]) / 1e9
         )
 
         # Get the representation of focus in the same Zernike basis as used for
@@ -435,6 +434,7 @@ class NIRCamFieldAndWavelengthDependentAberration(OpticalLayer):
         if instrument.channel.upper() == "SHORT":
             self.focusmodel = sw_focus_cf
             opd_ref_wave = 2.12
+            self.opd_ref_focus = 0
         else:
             self.focusmodel = lw_focus_cf
             opd_ref_wave = 3.23
@@ -473,7 +473,7 @@ class NIRCamFieldAndWavelengthDependentAberration(OpticalLayer):
             self.ctilt_model = None
             self.tilt_offset = lambda wl: 0
 
-    def __call__(self, wavefront):
+    def apply(self, wavefront):
         wavelength = wavefront.wavelength * 1e6
 
         # jax.debug.print("wavelength: {}", wavelength)

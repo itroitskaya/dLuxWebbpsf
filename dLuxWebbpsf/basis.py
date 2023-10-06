@@ -8,12 +8,15 @@ import numpy as onp
 from poppy.zernike import hexike_basis, zernike_basis
 from jax import Array
 
-__all__ = ["generate_jwst_basis", "generate_jwst_hexike_basis", "generate_jwst_secondary_basis"]
+__all__ = [
+    "generate_jwst_basis",
+    "generate_jwst_hexike_basis",
+    "generate_jwst_secondary_basis",
+]
 
 
 def get_noll_indices(
-    radial_orders: Array | list = None,
-    noll_indices: Array | list = None
+    radial_orders: Array | list = None, noll_indices: Array | list = None
 ):
     if radial_orders is not None:
         radial_orders = np.array(radial_orders)
@@ -48,14 +51,23 @@ def generate_jwst_basis(nterms, npix, pscale):
     basis = []
     for key in keys:  # cycling through segments
         centre = onp.array(seg_cens[key])
-        rhos, thetas = onp.array(dlu.pixel_coordinates((npix, npix), pscale, offsets=tuple(centre), polar=True))
-        basis.append(hexike_basis(nterms, npix, rhos / seg_rad, thetas, outside=0.0))  # appending basis
+        coords = np.array(
+            dlu.nd_coords(
+                npixels=(npix, npix),
+                pixel_scales=pscale,
+                offsets=tuple(centre),
+            )
+        )
+
+        rhos, thetas = onp.array(dlu.cart2polar(coords))
+        basis.append(
+            hexike_basis(nterms, npix, rhos / seg_rad, thetas, outside=0.0)
+        )  # appending basis
 
     pistons = sum(np.array([x[0] for x in basis]))
     mask = np.where(pistons == 1, 1, 0)
 
     return mask, np.array(basis)
-
 
 
 def generate_jwst_hexike_basis(
@@ -139,14 +151,15 @@ def generate_jwst_hexike_basis(
     basis = []
     for key in keys:  # cycling through segments
         centre = np.array([-1, 1]) * (np.array(seg_cens[key]) - shifts)
-        rhos, thetas = np.array(
-            dlu.pixel_coordinates(
+        coords = np.array(
+            dlu.nd_coords(
                 npixels=(npix, npix),
                 pixel_scales=pscale,
                 offsets=tuple(centre),
-                polar=True,
             )
         )
+
+        rhos, thetas = onp.array(dlu.cart2polar(coords))
         basis.append(
             hexike_basis(nterms, npix, rhos / seg_rad, thetas, outside=0.0)
         )  # appending basis
@@ -217,10 +230,7 @@ def generate_jwst_secondary_basis(
         noll_indices = np.array(noll_indices, dtype=int)
 
     nterms = int(noll_indices.max())
-
-    rhos, thetas = np.array(
-        dlu.pixel_coordinates((npix, npix), pixel_scales=2 / npix, polar=True)
-    )
+    rhos, thetas = dlu.pixel_coords(npix, 2, polar=True)
     secondary_basis = zernike_basis(nterms, npix, rhos, thetas, outside=0.0)
 
     # reducing back down to requested noll indices
