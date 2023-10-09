@@ -33,7 +33,7 @@ def rotate(array: Array, angle: Array, order: int = 3) -> Array:
     # Get coordinates
     npixels = array.shape[0]
     centre = (npixels - 1) / 2
-    coordinates = dlu.pixel_coordinates((npixels, npixels), indexing="ij")
+    coordinates = dlu.nd_coords((npixels, npixels), indexing="ij")
     coordinates_rotated = _rotate(coordinates, angle) + centre
 
     # Interpolate
@@ -85,9 +85,7 @@ def _mirror_index_fixer(index: Array, size: int) -> Array:
 
 
 def _reflect_index_fixer(index: Array, size: int) -> Array:
-    return jnp.floor_divide(
-        _mirror_index_fixer(2 * index + 1, 2 * size + 1) - 1, 2
-    )
+    return jnp.floor_divide(_mirror_index_fixer(2 * index + 1, 2 * size + 1) - 1, 2)
 
 
 _INDEX_FIXERS: Dict[str, Callable[[Array, int], Array]] = {
@@ -181,9 +179,7 @@ def _spline_basis(t: Array) -> Array:
     )
 
 
-def _spline_value(
-    coefficients: Array, coordinate: Array, indexes: Array
-) -> Array:
+def _spline_value(coefficients: Array, coordinate: Array, indexes: Array) -> Array:
     coefficient = jnp.squeeze(
         lax.dynamic_slice(coefficients, indexes, [1] * coefficients.ndim)
     )
@@ -228,9 +224,7 @@ def _map_coordinates(
     if index_fixer is None:
         raise NotImplementedError(
             "jax.scipy.ndimage.map_coordinates does not yet support mode {}. "
-            "Currently supported modes are {}.".format(
-                mode, set(_INDEX_FIXERS)
-            )
+            "Currently supported modes are {}.".format(mode, set(_INDEX_FIXERS))
         )
 
     if mode == "constant":

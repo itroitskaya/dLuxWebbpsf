@@ -165,8 +165,8 @@ class JWST(dl.Telescope):
             )
 
         # Rotation - probably want to eventually change units to degrees
-        # angle = instrument._detector_geom_info.aperture.V3IdlYAngle
-        # layers.append(Rotate(angle=dlu.deg2rad(-angle)))
+        angle = instrument._detector_geom_info.aperture.V3IdlYAngle
+        layers.append(Rotate(angle=dlu.deg2rad(-angle)))
 
         # Distortion
         if "add_distortion" not in options.keys() or options["add_distortion"]:
@@ -207,7 +207,9 @@ class JWST(dl.Telescope):
             position = [0, 0]
             if offset is not None:
                 position = offset
-            source = dl.PointSource(wavelengths=wavelengths, weights=weights, position=position, flux=flux)
+            source = dl.PointSource(
+                wavelengths=wavelengths, weights=weights, position=position, flux=flux
+            )
 
         return source
 
@@ -268,7 +270,8 @@ class NIRISS(JWST):
         """Constructs an optics object for the instrument."""
 
         # Construct downsampler
-        def dsamp(x): return dlu.downsample(x, wavefront_downsample)
+        def dsamp(x):
+            return dlu.downsample(x, wavefront_downsample)
 
         npix = 1024 // wavefront_downsample
 
@@ -289,7 +292,9 @@ class NIRISS(JWST):
 
         # No image mask layers yet for NIRISS
         if image_mask is not None:
-            raise NotImplementedError("Coronagraphic masks not yet implemented for NIRISS.")
+            raise NotImplementedError(
+                "Coronagraphic masks not yet implemented for NIRISS."
+            )
 
         # Index this from the end of the array since it will always be the second
         # last plane in the osys. Note this assumes there is no OPD in that optic.
@@ -376,7 +381,8 @@ class NIRCam(JWST):
         """Constructs an optics object for the instrument."""
 
         # Construct downsampler
-        def dsamp(x): return dlu.downsample(x, wavefront_downsample)
+        def dsamp(x):
+            return dlu.downsample(x, wavefront_downsample)
 
         diameter = planes[0].pixelscale.to("m/pix").value * planes[0].npix
         npix = planes[0].npix // wavefront_downsample
@@ -398,17 +404,21 @@ class NIRCam(JWST):
 
             pupil_transmission = pupil_transmission * hmask
 
-            pupil = JWSTSimplePrimary(pupil_transmission, pupil_opd, pscale, basis_flat, coeffs)
+            pupil = JWSTSimplePrimary(
+                pupil_transmission, pupil_opd, pscale, basis_flat, coeffs
+            )
 
             layers.append(("pupil", pupil))
         else:
             pupil = JWSTSimplePrimary(pupil_transmission, pupil_opd, pscale)
             layers.append(("pupil", pupil))
 
-        layers.extend([
+        layers.extend(
+            [
                 # Plane 1: Coordinate Inversion in y axis
                 ("InvertY", dl.Flip(0))
-        ])
+            ]
+        )
 
         # Coronagraphic masks
         # TODO: This should explicity check for the correct mask (ie CIRCLYOT)

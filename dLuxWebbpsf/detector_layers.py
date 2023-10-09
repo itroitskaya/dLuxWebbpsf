@@ -33,9 +33,7 @@ class ApplyJitter(dl.detector_layers.DetectorLayer):
         self.sigma = float(sigma)
 
     def apply(self, PSF):
-        # Convert sigma to pixels, note this assumes sigma has the same units
-        # as the pixel scale
-        jitter_pix = self.sigma / PSF.pixel_scale
+        jitter_pix = self.sigma / dlu.rad2arcsec(PSF.pixel_scale)
         jittered = utils.gaussian_filter_correlate(PSF.data, jitter_pix, ksize=3)
         return PSF.set("data", jittered)
 
