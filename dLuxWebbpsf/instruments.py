@@ -110,25 +110,25 @@ class JWST(dl.Telescope):
             )
 
         # Get WebbPSF instrument
-        webb_osys = getattr(webbpsf, instrument)()
+        webb_inst = getattr(webbpsf, instrument)()
 
         # TODO: Instrument specific checks for valid inputs
 
         # Configure the instrument
         if filter is not None:
-            webb_osys.filter = filter
+            webb_inst.filter = filter
         if pupil_mask is not None:
-            webb_osys.pupil_mask = pupil_mask
+            webb_inst.pupil_mask = pupil_mask
         if image_mask is not None:
-            webb_osys.image_mask = image_mask
+            webb_inst.image_mask = image_mask
         if detector is not None:
-            webb_osys.detector = detector
+            webb_inst.detector = detector
         if aperture is not None:
-            webb_osys.aperture_name = aperture
+            webb_inst.aperture_name = aperture
         if options is not None:
-            webb_osys.options.update(options)
+            webb_inst.options.update(options)
 
-        webb_osys.set_position_from_aperture_name(aperture)
+        webb_inst.set_position_from_aperture_name(aperture)
 
         # Configure optics input arguments
         kwargs = {}
@@ -147,8 +147,8 @@ class JWST(dl.Telescope):
         # otherwise some optical planes do not have its attributes populated,
         # namely the CLEARP mask transmission.
         # SIC! Check that these planes are not wavelength-dependent. There should be no need to call calc_psf!
-        optics = webb_osys.get_optical_system(**kwargs)
-        return webb_osys, optics
+        optics = webb_inst.get_optical_system(**kwargs)
+        return webb_inst, optics
 
     @staticmethod
     def _construct_detector(instrument, optics):
@@ -180,9 +180,10 @@ class JWST(dl.Telescope):
         layers.append(("SIAF", DistortionFromSiaf(instrument, optics)))
 
         # Charge migration (via \jitter) units of arcseconds
-        # TODO instrument.name will NOT work for NIRCam
+        # TODO clean up this code
+
         layers.append(
-            ("ChargeDiffusion", ApplyChargeDiffusion(instrument.name, kernel_size=11))
+            ("ChargeDiffusion", ApplyChargeDiffusion(instrument, kernel_size=11))
         )
 
         # Downsample - assumes last plane is detector
@@ -192,9 +193,7 @@ class JWST(dl.Telescope):
         layers.append(
             (
                 "IPC",
-                Convolve(
-                    get_detector_ipc_model(instrument)
-                ),
+                Convolve(get_detector_ipc_model(instrument)),
             )
         )
 

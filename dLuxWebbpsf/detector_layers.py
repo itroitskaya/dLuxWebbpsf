@@ -54,19 +54,27 @@ class ApplyChargeDiffusion(dl.detector_layers.DetectorLayer):
     sigma: float
     kernel_size: int
 
-    def __init__(self, instrument_key: str, kernel_size: int = 11):
-        super().__init__()
+    def __init__(self, instrument, kernel_size: int = 11):
+        if instrument.name == "NIRCam":
+            instrument_key = self._check_nircam_filter(instrument)
+        else:
+            instrument_key = instrument.name
+
         charge_def_params = (
             webbpsf.constants.INSTRUMENT_DETECTOR_CHARGE_DIFFUSION_DEFAULT_PARAMETERS
         )
+
         if instrument_key not in charge_def_params.keys():
-            raise ValueError(f"instrument_key must be in {charge_def_params.keys()}")
+            raise ValueError(
+                f"instrument_key {instrument_key} not in {charge_def_params.keys()}"
+            )
 
         if kernel_size % 2 == 0:
             raise ValueError("kernel_size must be an odd integer")
 
         self.kernel_size = int(kernel_size)
         self.sigma = float(charge_def_params[instrument_key])  # arcsec
+        super().__init__()
 
     def apply(self, PSF):
         """Convert sigma to units of pixels. NOTE: this assumes sigma has
@@ -77,6 +85,65 @@ class ApplyChargeDiffusion(dl.detector_layers.DetectorLayer):
             PSF.data, sigma_pix, ksize=self.kernel_size
         )
         return PSF.set("data", diffused)
+
+    @staticmethod
+    def _check_nircam_filter(instrument):
+        """
+        Checking to see if the filter is in the short or long wavelength. We do this
+        because the accepted NIRCam Instrument keys are "NIRCAM_SW" and "NIRCAM_LW".
+
+        Parameters
+        ----------
+        instrument : webbpsf instrument object
+
+        Returns
+        -------
+        str
+            Either "NIRCAM_SW" or "NIRCAM_LW"
+        """
+
+        if instrument.name == "NIRCam":
+            sw_channel = [
+                "F070W",
+                "F090W",
+                "F115W",
+                "F140M",
+                "F150W",
+                "F162M",
+                "F164N",
+                "F150W2",
+                "F182M",
+                "F187N",
+                "F200W",
+                "F210M",
+                "F212N",
+            ]
+            lw_channel = [
+                "F250M",
+                "F277W",
+                "F300M",
+                "F322W2",
+                "F323N",
+                "F335M",
+                "F356W",
+                "F360M",
+                "F405N",
+                "F410M",
+                "F430M",
+                "F444W",
+                "F460M",
+                "F466N",
+                "F470N",
+                "F480M",
+            ]
+            if instrument.filter in sw_channel:
+                return "NIRCAM_SW"
+            elif instrument.filter in lw_channel:
+                return "NIRCAM_LW"
+            else:
+                raise NotImplementedError(
+                    f"Filter {instrument.filter} not currently supported."
+                )
 
 
 class Rotate(dl.Rotate):
@@ -129,29 +196,52 @@ def get_detector_ipc_model(instrument):
     inst_name = instrument.name  # TODO probably will break for NIRCam
     det = instrument._detector  # detector name
 
-    if inst_name == 'NIRCAM':
-
+    if inst_name == "NIRCAM":
         det2sca = {
-            'NRCA1': '481', 'NRCA2': '482', 'NRCA3': '483', 'NRCA4': '484', 'NRCA5': '485',
-            'NRCB1': '486', 'NRCB2': '487', 'NRCB3': '488', 'NRCB4': '489', 'NRCB5': '490',
+            "NRCA1": "481",
+            "NRCA2": "482",
+            "NRCA3": "483",
+            "NRCA4": "484",
+            "NRCA5": "485",
+            "NRCB1": "486",
+            "NRCB2": "487",
+            "NRCB3": "488",
+            "NRCB4": "489",
+            "NRCB5": "490",
         }
 
         # IPC effect
         # read the SCA extension for the detector
-        sca_path = os.path.join(webbpsf.utils.get_webbpsf_data_path(), 'NIRCam', 'IPC', 'KERNEL_IPC_CUBE.fits')
-        kernel_ipc = CustomKernel(fits.open(sca_path)[det2sca[det]].data[0])  # we read the first slice in the cube
+        sca_path = os.path.join(
+            webbpsf.utils.get_webbpsf_data_path(),
+            "NIRCam",
+            "IPC",
+            "KERNEL_IPC_CUBE.fits",
+        )
+        kernel_ipc = CustomKernel(
+            fits.open(sca_path)[det2sca[det]].data[0]
+        )  # we read the first slice in the cube
 
         # PPC effect
         # read the SCA extension for the detector
         ## TODO: This depends on detector coordinates, and which readout amplifier.
         # if in subarray, then the PPC effect is always like in amplifier 1
-        sca_path_ppc = os.path.join(webbpsf.utils.get_webbpsf_data_path(), 'NIRCam', 'IPC', 'KERNEL_PPC_CUBE.fits')
+        sca_path_ppc = os.path.join(
+            webbpsf.utils.get_webbpsf_data_path(),
+            "NIRCam",
+            "IPC",
+            "KERNEL_PPC_CUBE.fits",
+        )
         kernel_ppc = CustomKernel(
-            fits.open(sca_path_ppc)[det2sca[det]].data[0])  # we read the first slice in the cube
+            fits.open(sca_path_ppc)[det2sca[det]].data[0]
+        )  # we read the first slice in the cube
 
-        kernel = (kernel_ipc, kernel_ppc)  # Return two distinct convolution kernels in this case
+        kernel = (
+            kernel_ipc,
+            kernel_ppc,
+        )  # Return two distinct convolution kernels in this case
 
-    elif inst_name == 'NIRISS':
+    elif inst_name == "NIRISS":
         # NIRISS IPC files distinguish between the 4 detector readout channels, and
         # whether or not the pixel is within the region of a large detector epoxy void
         # that is present in the NIRISS detector.
@@ -162,7 +252,9 @@ def get_detector_ipc_model(instrument):
         yposition = instrument._detector_position[1]
 
         # find the voidmask fits file
-        voidmask10 = os.path.join(webbpsf.utils.get_webbpsf_data_path(), 'NIRISS', 'IPC', 'voidmask10.fits')
+        voidmask10 = os.path.join(
+            webbpsf.utils.get_webbpsf_data_path(), "NIRISS", "IPC", "voidmask10.fits"
+        )
 
         if os.path.exists(voidmask10):
             maskimage = fits.getdata(voidmask10)
@@ -176,12 +268,13 @@ def get_detector_ipc_model(instrument):
             # This marks the pixel as non-void by default if the maskimage is not
             # read in properly
             flag = 0
-        frag1 = ['A', 'B', 'C', 'D']
-        frag2 = ['notvoid', 'void']
+        frag1 = ["A", "B", "C", "D"]
+        frag2 = ["notvoid", "void"]
 
-        ipcname = 'ipc5by5median_amp' + frag1[nchannel] + '_' + \
-                  frag2[flag] + '.fits'
-        ipc_file = os.path.join(webbpsf.utils.get_webbpsf_data_path(), 'NIRISS', 'IPC', ipcname)
+        ipcname = "ipc5by5median_amp" + frag1[nchannel] + "_" + frag2[flag] + ".fits"
+        ipc_file = os.path.join(
+            webbpsf.utils.get_webbpsf_data_path(), "NIRISS", "IPC", ipcname
+        )
         if os.path.exists(ipc_file):
             kernel = fits.getdata(ipc_file)
         else:
@@ -257,15 +350,15 @@ class SiafDistortion(dl.detector_layers.DetectorLayer):
     pows: Array
 
     def __init__(
-            self,
-            degree,
-            Sci2Idl,
-            Idl2Sci,
-            SciRef,
-            SciCen,
-            SciScale,
-            pixelscale,
-            oversample,
+        self,
+        degree,
+        Sci2Idl,
+        Idl2Sci,
+        SciRef,
+        SciCen,
+        SciScale,
+        pixelscale,
+        oversample,
     ):
         super().__init__()
         # Coefficients
