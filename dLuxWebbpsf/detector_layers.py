@@ -4,9 +4,11 @@ import dLux.utils as dlu
 from jax import Array
 from jax.scipy.ndimage import map_coordinates
 import webbpsf
+from astropy.io import fits
+import os
+from astropy.convolution.kernels import CustomKernel
 
 from . import utils
-
 
 """
 Script for all the various forms of detector transformations required to model
@@ -18,6 +20,7 @@ __all__ = [
     "ApplyChargeDiffusion",
     "Rotate",
     "Convolve",
+    "get_detector_ipc_model",
     "SiafDistortion",
     "DistortionFromSiaf",
 ]
@@ -107,6 +110,89 @@ class Convolve(dl.layers.detector_layers.DetectorLayer):
         return PSF.convolve(self.kernel)
 
 
+def get_detector_ipc_model(instrument):
+    """Retrieve detector interpixel capacitance model.
+    The details of the available calibration data vary per instrument.
+    Altered version of webbpsf function at
+    https://github.com/spacetelescope/webbpsf/blob/ca1fdf6a151434ee93a59729436c903858f527b9/webbpsf/detectors.py#L15
+
+    Parameters:
+    -----------
+    instrument : webbpsf instrument object
+
+    Returns:
+    --------
+    kernel : numpy.ndarray
+        Convolution kernel
+    """
+
+    inst_name = instrument.name  # TODO probably will break for NIRCam
+    det = instrument._detector  # detector name
+
+    if inst_name == 'NIRCAM':
+
+        det2sca = {
+            'NRCA1': '481', 'NRCA2': '482', 'NRCA3': '483', 'NRCA4': '484', 'NRCA5': '485',
+            'NRCB1': '486', 'NRCB2': '487', 'NRCB3': '488', 'NRCB4': '489', 'NRCB5': '490',
+        }
+
+        # IPC effect
+        # read the SCA extension for the detector
+        sca_path = os.path.join(webbpsf.utils.get_webbpsf_data_path(), 'NIRCam', 'IPC', 'KERNEL_IPC_CUBE.fits')
+        kernel_ipc = CustomKernel(fits.open(sca_path)[det2sca[det]].data[0])  # we read the first slice in the cube
+
+        # PPC effect
+        # read the SCA extension for the detector
+        ## TODO: This depends on detector coordinates, and which readout amplifier.
+        # if in subarray, then the PPC effect is always like in amplifier 1
+        sca_path_ppc = os.path.join(webbpsf.utils.get_webbpsf_data_path(), 'NIRCam', 'IPC', 'KERNEL_PPC_CUBE.fits')
+        kernel_ppc = CustomKernel(
+            fits.open(sca_path_ppc)[det2sca[det]].data[0])  # we read the first slice in the cube
+
+        kernel = (kernel_ipc, kernel_ppc)  # Return two distinct convolution kernels in this case
+
+    elif inst_name == 'NIRISS':
+        # NIRISS IPC files distinguish between the 4 detector readout channels, and
+        # whether or not the pixel is within the region of a large detector epoxy void
+        # that is present in the NIRISS detector.
+
+        # this set-up the input variables as required by Kevin Volk IPC code
+        # image = psf_hdulist[ext].data
+        xposition = instrument._detector_position[0]
+        yposition = instrument._detector_position[1]
+
+        # find the voidmask fits file
+        voidmask10 = os.path.join(webbpsf.utils.get_webbpsf_data_path(), 'NIRISS', 'IPC', 'voidmask10.fits')
+
+        if os.path.exists(voidmask10):
+            maskimage = fits.getdata(voidmask10)
+        else:
+            maskimage = None
+
+        nchannel = int(yposition) // 512
+        try:
+            flag = maskimage[nchannel, int(xposition)]
+        except:
+            # This marks the pixel as non-void by default if the maskimage is not
+            # read in properly
+            flag = 0
+        frag1 = ['A', 'B', 'C', 'D']
+        frag2 = ['notvoid', 'void']
+
+        ipcname = 'ipc5by5median_amp' + frag1[nchannel] + '_' + \
+                  frag2[flag] + '.fits'
+        ipc_file = os.path.join(webbpsf.utils.get_webbpsf_data_path(), 'NIRISS', 'IPC', ipcname)
+        if os.path.exists(ipc_file):
+            kernel = fits.getdata(ipc_file)
+        else:
+            kernel = None
+
+    elif inst_name in ["FGS", "NIRSPEC", "WFI", "MIRI"]:
+        kernel = None  # No IPC models yet implemented for these
+
+    return kernel
+
+
 def gen_powers(degree):
     """
     Generates the powers required for a 2d polynomial
@@ -171,15 +257,15 @@ class SiafDistortion(dl.detector_layers.DetectorLayer):
     pows: Array
 
     def __init__(
-        self,
-        degree,
-        Sci2Idl,
-        Idl2Sci,
-        SciRef,
-        SciCen,
-        SciScale,
-        pixelscale,
-        oversample,
+            self,
+            degree,
+            Sci2Idl,
+            Idl2Sci,
+            SciRef,
+            SciCen,
+            SciScale,
+            pixelscale,
+            oversample,
     ):
         super().__init__()
         # Coefficients

@@ -189,14 +189,11 @@ class JWST(dl.Telescope):
         layers.append(("Downsample", dl.Downsample(optics.planes[-1].oversample)))
 
         # Interpixel Capacitance
-        psf_fits = instrument.calc_psf()
         layers.append(
             (
                 "IPC",
                 Convolve(
-                    webbpsf.detectors.get_detector_ipc_model(
-                        "NIRISS", psf_fits[0].header
-                    )[0]
+                    get_detector_ipc_model(instrument)
                 ),
             )
         )
