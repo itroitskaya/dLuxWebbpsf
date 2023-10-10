@@ -3,6 +3,7 @@ import dLux as dl
 import dLux.utils as dlu
 from jax import Array
 from jax.scipy.ndimage import map_coordinates
+import webbpsf
 
 from . import utils
 
@@ -14,7 +15,9 @@ webbpsf.
 
 __all__ = [
     "ApplyJitter",
+    "ApplyChargeDiffusion",
     "Rotate",
+    "Convolve",
     "SiafDistortion",
     "DistortionFromSiaf",
 ]
@@ -38,6 +41,41 @@ class ApplyJitter(dl.detector_layers.DetectorLayer):
         return PSF.set("data", jittered)
 
 
+class ApplyChargeDiffusion(dl.detector_layers.DetectorLayer):
+    """
+    Applies a gaussian filter to the PSF. This is designed to match the
+    scipy.ndPSF.gaussian_filter function in the same vein of webbpsf.
+    This is to emulate charge diffusion on the detector.
+    """
+
+    sigma: float
+    kernel_size: int
+
+    def __init__(self, instrument_key: str, kernel_size: int = 11):
+        super().__init__()
+        charge_def_params = (
+            webbpsf.constants.INSTRUMENT_DETECTOR_CHARGE_DIFFUSION_DEFAULT_PARAMETERS
+        )
+        if instrument_key not in charge_def_params.keys():
+            raise ValueError(f"instrument_key must be in {charge_def_params.keys()}")
+
+        if kernel_size % 2 == 0:
+            raise ValueError("kernel_size must be an odd integer")
+
+        self.kernel_size = int(kernel_size)
+        self.sigma = float(charge_def_params[instrument_key])  # arcsec
+
+    def apply(self, PSF):
+        """Convert sigma to units of pixels. NOTE: this assumes sigma has
+        the same units as the pixel scale."""
+        sigma_pix = self.sigma / dlu.rad2arcsec(PSF.pixel_scale)
+
+        diffused = utils.gaussian_filter_correlate(
+            PSF.data, sigma_pix, ksize=self.kernel_size
+        )
+        return PSF.set("data", diffused)
+
+
 class Rotate(dl.Rotate):
     """
     A simple rotation layer that overwrites the default dLux rotation layer
@@ -51,6 +89,22 @@ class Rotate(dl.Rotate):
     def apply(self, PSF):
         rotated = utils.rotate(PSF.data, self.angle, order=3)
         return PSF.set("data", rotated)
+
+
+# TODO this class may be implemented into dLux proper in which case this
+# should be removed.
+class Convolve(dl.layers.detector_layers.DetectorLayer):
+    """Performs a convolution with a given kernel. Pixel scale of the
+    kernel is assumed to be the same as the pixel scale of the PSF."""
+
+    kernel: Array
+
+    def __init__(self, kernel):
+        super().__init__()
+        self.kernel = np.asarray(kernel, float)
+
+    def apply(self, PSF):
+        return PSF.convolve(self.kernel)
 
 
 def gen_powers(degree):

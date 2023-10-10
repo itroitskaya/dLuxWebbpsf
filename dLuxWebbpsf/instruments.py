@@ -148,41 +148,58 @@ class JWST(dl.Telescope):
         # namely the CLEARP mask transmission.
         # SIC! Check that these planes are not wavelength-dependent. There should be no need to call calc_psf!
         optics = webb_osys.get_optical_system(**kwargs)
-        # optics.calc_psf()
         return webb_osys, optics
 
-    def _construct_detector(self, instrument, optics):
-        """Constructs a detector object for the instrument."""
+    @staticmethod
+    def _construct_detector(instrument, optics):
+        """Constructs a detector object for the instrument. The detector effects include:
+        - Gaussian Jitter [not included, it has no effect in webbpsf]
+        - Rotation
+        - SIAF Distortion
+        - Charge Diffusion (Gaussian filter)
+        - Downsample
+        - Interpixel Capacitance (Gaussian filter)
+        """
 
-        options = instrument.options
+        # TODO build compatibility with webbpsf options
+        # options = instrument.options
         layers = []
 
-        # Jitter - webbpsf default units are arcseconds, so we assume that psf
-        # units are also arcseconds
-        if "jitter" in options.keys() and options["jitter"] == "gaussian":
-            layers.append(
-                ("jitter", ApplyJitter(sigma=instrument.options["jitter_sigma"]))
-            )
+        # # Jitter - webbpsf default units are arcseconds, so we assume that psf
+        # # units are also arcseconds
+        # if "jitter" in options.keys() and options["jitter"] == "gaussian":
+        #     layers.append(
+        #         ("jitter", ApplyJitter(sigma=instrument.options["jitter_sigma"]))
+        #     )
 
         # Rotation - probably want to eventually change units to degrees
         angle = instrument._detector_geom_info.aperture.V3IdlYAngle
-        layers.append(Rotate(angle=dlu.deg2rad(-angle)))
+        layers.append(("Rotation", Rotate(angle=dlu.deg2rad(-angle))))
 
         # Distortion
-        if "add_distortion" not in options.keys() or options["add_distortion"]:
-            layers.append(DistortionFromSiaf(instrument, optics))
+        layers.append(("SIAF", DistortionFromSiaf(instrument, optics)))
 
-        # # Charge migration (via \jitter) units of arcseconds
-        # c = webbpsf.constants
-        # sigma = c.INSTRUMENT_DETECTOR_CHARGE_DIFFUSION_DEFAULT_PARAMETERS[
-        #     instrument.name
-        # ]
-        # layers.append(
-        #     (ApplyJitter(sigma=sigma), "charge_migration")
-        # )
+        # Charge migration (via \jitter) units of arcseconds
+        # TODO instrument.name will NOT work for NIRCam
+        layers.append(
+            ("ChargeDiffusion", ApplyChargeDiffusion(instrument.name, kernel_size=11))
+        )
 
         # Downsample - assumes last plane is detector
-        layers.append(dl.Downsample(optics.planes[-1].oversample))
+        layers.append(("Downsample", dl.Downsample(optics.planes[-1].oversample)))
+
+        # Interpixel Capacitance
+        psf_fits = instrument.calc_psf()
+        layers.append(
+            (
+                "IPC",
+                Convolve(
+                    webbpsf.detectors.get_detector_ipc_model(
+                        "NIRISS", psf_fits[0].header
+                    )[0]
+                ),
+            )
+        )
 
         # Construct detector
         return dl.LayeredDetector(layers)
