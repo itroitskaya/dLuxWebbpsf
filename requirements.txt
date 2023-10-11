@@ -1,5 +1,5 @@
 dlux==0.14.*
 jax
-webbpsf
+webbpsf==1.2.*
 numpy
 scipy
