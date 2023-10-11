@@ -42,6 +42,7 @@ class JWST(dl.Telescope):
         phase_retrieval_terms=0,  # Number of terms in phase retrieval layer
         flux=1,  # float: flux of point source
         source=None,  # Source: dLux source object
+        load_opd_date=None, # Date of the JWST OPD to load
         **kwargs,
     ):
         # Get configured instrument_name and optical system
@@ -57,9 +58,8 @@ class JWST(dl.Telescope):
             fov_pixels=fov_pixels,
             fft_oversample=fft_oversample,
             detector_oversample=detector_oversample,
+            load_opd_date=load_opd_date
         )
-
-        # print(osys.__dict__)
 
         # Construct Optics
         optics = self._construct_optics(
@@ -103,6 +103,7 @@ class JWST(dl.Telescope):
         fov_pixels,
         fft_oversample,
         detector_oversample,
+        load_opd_date,
     ):
         """
         Configure a WebbPSF instrument_name for use with dLuxWebbpsf.
@@ -134,7 +135,8 @@ class JWST(dl.Telescope):
             webb_inst.set_position_from_aperture_name(aperture)
         if options is not None:
             webb_inst.options.update(options)
-        
+        if load_opd_date is not None:
+            webb_inst.load_wss_opd_by_date(load_opd_date)
 
         # Configure optics input arguments
         kwargs = {}
@@ -376,6 +378,7 @@ class NIRCam(JWST):
         phase_retrieval_terms=0,  # Number of terms in phase retrieval layer
         flux=1,  # float: flux of point source
         source=None,  # Source: dLux source object
+        load_opd_date=None # Date of the JWST OPD to load
     ):
         super().__init__(
             "NIRCam",
@@ -397,6 +400,7 @@ class NIRCam(JWST):
             phase_retrieval_terms=phase_retrieval_terms,
             flux=flux,
             source=source,
+            load_opd_date=load_opd_date
         )
 
     @staticmethod
@@ -430,11 +434,11 @@ class NIRCam(JWST):
         if phase_retrieval_terms > 0:
             # Add phase retrieval layer
 
-            hmask, basis = generate_jwst_basis(phase_retrieval_terms, npix, pscale)
+            basis = generate_jwst_basis(phase_retrieval_terms, npix, pscale)
             basis_flat = basis.reshape((phase_retrieval_terms * 18, npix, npix))
             coeffs = np.zeros((basis_flat.shape[0]))
 
-            pupil_transmission = pupil_transmission * hmask
+            pupil_transmission = pupil_transmission
 
             pupil = JWSTSimplePrimary(
                 pupil_transmission, pupil_opd, pscale, basis_flat, coeffs
