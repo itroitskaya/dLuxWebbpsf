@@ -355,12 +355,13 @@ class NIRCamFieldAndWavelengthDependentAberration(OpticalLayer):
     tilt_zern: None
 
     focusmodel: None
-    deltafocus: None
     opd_ref_focus: None
 
     ctilt_model: None
-    tilt_offset: None
     tilt_ref_offset: None
+
+    has_tilt_offset: False
+    has_defocus: False
 
     def __init__(self, instrument, amplitude, opd, zernike_coeffs):
         super().__init__()
@@ -371,9 +372,7 @@ class NIRCamFieldAndWavelengthDependentAberration(OpticalLayer):
 
         # Check for coronagraphy
         pupil_mask = instrument._pupil_mask
-        is_nrc_coron = (pupil_mask is not None) and (
-            ("LYOT" in pupil_mask.upper()) or ("MASK" in pupil_mask.upper())
-        )
+        is_nrc_coron = (pupil_mask is not None) and (("LYOT" in pupil_mask.upper()) or ("MASK" in pupil_mask.upper()))
 
         # Polynomial equations fit to defocus model. Wavelength-dependent focus
         # results should correspond to Zernike coefficients in meters.
@@ -384,24 +383,9 @@ class NIRCamFieldAndWavelengthDependentAberration(OpticalLayer):
         # similar for coronagraphic mode in the Zemax optical prescription,
         # so we opt to use the same focus model in both imaging and coronagraphy.
         defocus_to_rmswfe = -1.09746e7  # convert from mm defocus to meters (WFE)
-        sw_focus_cf = (
-            np.array(
-                [
-                    -5.169185169,
-                    50.62919436,
-                    -201.5444129,
-                    415.9031962,
-                    -465.9818413,
-                    265.843112,
-                    -59.64330811,
-                ]
-            )
-            / defocus_to_rmswfe
-        )
-        lw_focus_cf = (
-            np.array([0.175718713, -1.100964635, 0.986462016, 1.641692934])
-            / defocus_to_rmswfe
-        )
+        sw_focus_cf = np.array([-5.169185169, 50.62919436, -201.5444129, 415.9031962,
+                                -465.9818413, 265.843112, -59.64330811]) / defocus_to_rmswfe
+        lw_focus_cf = np.array([0.175718713, -1.100964635, 0.986462016, 1.641692934]) / defocus_to_rmswfe
 
         # Coronagraphic tilt (`ctilt`) offset model
         # Primarily effects the LW channel (approximately a 0.031mm diff from 3.5um to 5.0um).
@@ -410,9 +394,7 @@ class NIRCamFieldAndWavelengthDependentAberration(OpticalLayer):
         # NIRCam Zemax models. The center reference positions will correspond to the
         # NIRCam target acquisition filters (3.35um for LW and 2.1um for SW)
         sw_ctilt_cf = np.array([125.849834, -289.018704]) / 1e9
-        lw_ctilt_cf = (
-            np.array([146.827501, -2000.965222, 8385.546158, -11101.658322]) / 1e9
-        )
+        lw_ctilt_cf = np.array([146.827501, -2000.965222, 8385.546158, -11101.658322]) / 1e9
 
         # Get the representation of focus in the same Zernike basis as used for
         # making the OPD. While it looks like this does more work here than needed
@@ -434,7 +416,7 @@ class NIRCamFieldAndWavelengthDependentAberration(OpticalLayer):
         if instrument.channel.upper() == "SHORT":
             self.focusmodel = sw_focus_cf
             opd_ref_wave = 2.12
-            self.opd_ref_focus = 0
+            self.opd_ref_focus = np.polyval(self.focusmodel, opd_ref_wave)
         else:
             self.focusmodel = lw_focus_cf
             opd_ref_wave = 3.23
@@ -446,11 +428,11 @@ class NIRCamFieldAndWavelengthDependentAberration(OpticalLayer):
 
         # If F323N or F212N, then no focus offset necessary
         if ("F323N" in instrument.filter) or ("F212N" in instrument.filter):
-            self.deltafocus = lambda wl: 0
+            self.focusmodel = np.array([0])
+            self.opd_ref_focus = 0
+            self.has_defocus = False
         else:
-            self.deltafocus = (
-                lambda wl: np.polyval(self.focusmodel, wl) - self.opd_ref_focus
-            )
+            self.has_defocus = True
 
         if is_nrc_coron:
             if instrument.channel.upper() == "SHORT":
@@ -462,24 +444,25 @@ class NIRCamFieldAndWavelengthDependentAberration(OpticalLayer):
 
             self.tilt_ref_offset = np.polyval(self.ctilt_model, ta_ref_wave)
 
-            # print("opd_ref_focus: {}", self.opd_ref_focus)
-            # print("tilt_ref_offset: {}", self.tilt_ref_offset)
-
-            self.tilt_offset = (
-                lambda wl: np.polyval(self.ctilt_model, wl) - self.tilt_ref_offset
-            )
+            self.has_tilt_offset = True
         else:
-            self.tilt_ref_offset = None
-            self.ctilt_model = None
-            self.tilt_offset = lambda wl: 0
+            self.tilt_ref_offset = 0
+            self.ctilt_model = np.array([0])
+            
+            self.has_tilt_offset = False
 
     def apply(self, wavefront):
         wavelength = wavefront.wavelength * 1e6
 
         # jax.debug.print("wavelength: {}", wavelength)
 
-        mod_opd = self.opd - self.deltafocus(wavelength) * self.defocus_zern
-        mod_opd = mod_opd + self.tilt_offset(wavelength) * self.tilt_zern
+        mod_opd = self.opd
+
+        if self.has_defocus:
+            mod_opd = mod_opd - (np.polyval(self.focusmodel, wavelength) - self.opd_ref_focus) * self.defocus_zern
+
+        if self.has_tilt_offset:
+            mod_opd = mod_opd + (np.polyval(self.ctilt_model, wavelength) - self.tilt_ref_offset) * self.tilt_zern
 
         wavefront = wavefront * self.amplitude
 
