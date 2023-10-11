@@ -42,13 +42,15 @@ def get_noll_indices(
 
 def generate_jwst_basis(nterms, npix, pscale):
     # Get webbpsf model
-    seg_rad = const.JWST_SEGMENT_RADIUS  # TODO check for overlapping pixels
+    seg_rad = const.JWST_SEGMENT_RADIUS * 1.01 # Upsize a bit to avoid uncovered pixels
     keys = const.SEGNAMES_WSS  # all mirror segments
 
     seg_cens = dict(const.JWST_PRIMARY_SEGMENT_CENTERS)
 
     # Generating a basis for each segment
     basis = []
+    mask = None
+
     for key in keys:  # cycling through segments
         centre = onp.array(seg_cens[key])
         coords = np.array(
@@ -60,14 +62,17 @@ def generate_jwst_basis(nterms, npix, pscale):
         )
 
         rhos, thetas = onp.array(dlu.cart2polar(coords))
-        basis.append(
-            hexike_basis(nterms, npix, rhos / seg_rad, thetas, outside=0.0)
-        )  # appending basis
+        hexike = hexike_basis(nterms, npix, rhos / seg_rad, thetas, outside=0.0)
 
-    pistons = sum(np.array([x[0] for x in basis]))
-    mask = np.where(pistons == 1, 1, 0)
+        if mask is None:
+            mask = np.logical_not(hexike[0])
+        else:
+            hexike *= mask
+            mask *= np.logical_not(hexike[0])
 
-    return mask, np.array(basis)
+        basis.append(hexike)  # appending basis
+
+    return np.array(basis)
 
 
 def generate_jwst_hexike_basis(
