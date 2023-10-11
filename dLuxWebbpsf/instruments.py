@@ -392,11 +392,11 @@ class NIRCam(JWST):
         if phase_retrieval_terms > 0:
             # Add phase retrieval layer
 
-            hmask, basis = generate_jwst_basis(phase_retrieval_terms, npix, pscale)
+            basis = generate_jwst_basis(phase_retrieval_terms, npix, pscale)
             basis_flat = basis.reshape((phase_retrieval_terms * 18, npix, npix))
             coeffs = np.zeros((basis_flat.shape[0]))
 
-            pupil_transmission = pupil_transmission * hmask
+            pupil_transmission = pupil_transmission
 
             pupil = JWSTSimplePrimary(pupil_transmission, pupil_opd, pscale, basis_flat, coeffs)
 
