@@ -23,7 +23,7 @@ class JWST(dl.Telescope):
 
     def __init__(
         self: JWST,
-        instrument: str,  # string: name of the instrument
+        instrument: str,  # string: name of the instrument_name
         filter=None,  # string: name of the filter
         pupil_mask=None,  # string: name of the pupil mask
         image_mask=None,  # string: name of the image mask
@@ -43,7 +43,7 @@ class JWST(dl.Telescope):
         flux=1,  # float: flux of point source
         source=None,  # Source: dLux source object
     ):
-        # Get configured instrument and optical system
+        # Get configured instrument_name and optical system
         instrument, osys = self._configure_instrument(
             instrument,
             filter=filter,
@@ -82,12 +82,12 @@ class JWST(dl.Telescope):
         # Construct Detector Object
         detector = self._construct_detector(instrument, osys)
 
-        # Construct the instrument
+        # Construct the instrument_name
         super().__init__(optics=optics, source=source, detector=detector)
 
     @staticmethod
     def _configure_instrument(
-        instrument,
+        instrument_name,
         *,
         filter,
         pupil_mask,
@@ -101,20 +101,20 @@ class JWST(dl.Telescope):
         detector_oversample,
     ):
         """
-        Configure a WebbPSF instrument for use with dLuxWebbpsf.
+        Configure a WebbPSF instrument_name for use with dLuxWebbpsf.
         """
         # Check Valid Instrument
-        if instrument not in ("NIRCam", "NIRISS"):
+        if instrument_name not in ("NIRCam", "NIRISS"):
             raise NotImplementedError(
-                f"Instrument {instrument} not currently supported."
+                f"Instrument {instrument_name} not currently supported."
             )
 
-        # Get WebbPSF instrument
-        webb_inst = getattr(webbpsf, instrument)()
+        # Get WebbPSF instrument_name
+        webb_inst = getattr(webbpsf, instrument_name)()
 
         # TODO: Instrument specific checks for valid inputs
 
-        # Configure the instrument
+        # Configure the instrument_name
         if filter is not None:
             webb_inst.filter = filter
         if pupil_mask is not None:
@@ -162,14 +162,14 @@ class JWST(dl.Telescope):
         """
 
         # TODO build compatibility with webbpsf options
-        # options = instrument.options
+        # options = instrument_name.options
         layers = []
 
         # # Jitter - webbpsf default units are arcseconds, so we assume that psf
         # # units are also arcseconds
         # if "jitter" in options.keys() and options["jitter"] == "gaussian":
         #     layers.append(
-        #         ("jitter", ApplyJitter(sigma=instrument.options["jitter_sigma"]))
+        #         ("jitter", ApplyJitter(sigma=instrument_name.options["jitter_sigma"]))
         #     )
 
         # Rotation - probably want to eventually change units to degrees
@@ -179,12 +179,8 @@ class JWST(dl.Telescope):
         # Distortion
         layers.append(("SIAF", DistortionFromSiaf(instrument, optics)))
 
-        # Charge migration (via \jitter) units of arcseconds
-        # TODO clean up this code
-
-        layers.append(
-            ("ChargeDiffusion", ApplyChargeDiffusion(instrument, kernel_size=11))
-        )
+        # Charge diffusion (via \jitter) units of arcseconds
+        layers.append(("ChargeDiffusion", ApplyChargeDiffusion(instrument, kernel_size=11)))
 
         # Downsample - assumes last plane is detector
         layers.append(("Downsample", dl.Downsample(optics.planes[-1].oversample)))
@@ -203,7 +199,7 @@ class JWST(dl.Telescope):
     def _construct_source(
         self, *, instrument, source, nlambda, monochromatic, offset, flux
     ):
-        """Constructs a source object for the instrument."""
+        """Constructs a source object for the instrument_name."""
 
         if nlambda is None or nlambda == 0:
             nlambda = instrument._get_default_nlambda(instrument.filter)
@@ -280,7 +276,7 @@ class NIRISS(JWST):
         wavefront_downsample,
         phase_retrieval_terms,
     ):
-        """Constructs an optics object for the instrument."""
+        """Constructs an optics object for the instrument_name."""
 
         # Construct downsampler
         def dsamp(x):
@@ -335,7 +331,7 @@ class NIRISS(JWST):
 
 class NIRCam(JWST):
     """
-    Class for the NIRCam instrument on the James Webb Space Telescope.
+    Class for the NIRCam instrument_name on the James Webb Space Telescope.
     """
 
     def __init__(
@@ -381,8 +377,8 @@ class NIRCam(JWST):
             source=source,
         )
 
+    @staticmethod
     def _construct_optics(
-        self,
         planes,
         image_mask,
         pupil_mask,

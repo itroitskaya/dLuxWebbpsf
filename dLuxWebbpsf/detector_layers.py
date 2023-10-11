@@ -196,7 +196,7 @@ def get_detector_ipc_model(instrument):
     inst_name = instrument.name  # TODO probably will break for NIRCam
     det = instrument._detector  # detector name
 
-    if inst_name == "NIRCAM":
+    if inst_name == "NIRCam":
         det2sca = {
             "NRCA1": "481",
             "NRCA2": "482",
@@ -222,24 +222,24 @@ def get_detector_ipc_model(instrument):
             fits.open(sca_path)[det2sca[det]].data[0]
         )  # we read the first slice in the cube
 
-        # PPC effect
-        # read the SCA extension for the detector
-        ## TODO: This depends on detector coordinates, and which readout amplifier.
-        # if in subarray, then the PPC effect is always like in amplifier 1
-        sca_path_ppc = os.path.join(
-            webbpsf.utils.get_webbpsf_data_path(),
-            "NIRCam",
-            "IPC",
-            "KERNEL_PPC_CUBE.fits",
-        )
-        kernel_ppc = CustomKernel(
-            fits.open(sca_path_ppc)[det2sca[det]].data[0]
-        )  # we read the first slice in the cube
+        # Note: WebbPSF generates a kernel for PPC effect as well
+        # This is ignored here
+        # sca_path_ppc = os.path.join(
+        #     webbpsf.utils.get_webbpsf_data_path(),
+        #     "NIRCam",
+        #     "IPC",
+        #     "KERNEL_PPC_CUBE.fits",
+        # )
+        # kernel_ppc = CustomKernel(
+        #     fits.open(sca_path_ppc)[det2sca[det]].data[0]
+        # )  # we read the first slice in the cube
 
-        kernel = (
-            kernel_ipc,
-            kernel_ppc,
-        )  # Return two distinct convolution kernels in this case
+        # kernel = (
+        #     kernel_ipc.array,
+        #     # kernel_ppc,
+        # )  # Return two distinct convolution kernels in this case
+
+        kernel = kernel_ipc.array
 
     elif inst_name == "NIRISS":
         # NIRISS IPC files distinguish between the 4 detector readout channels, and
