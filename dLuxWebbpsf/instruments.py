@@ -58,6 +58,8 @@ class JWST(dl.Telescope):
             detector_oversample=detector_oversample,
         )
 
+        # print(osys.__dict__)
+
         # Construct Optics
         optics = self._construct_optics(
             osys.planes,
@@ -128,6 +130,8 @@ class JWST(dl.Telescope):
         if options is not None:
             webb_inst.options.update(options)
 
+        # NOTE: THIS CAN CHANGE THE FOV_PIXELS!!
+        # When comparing to webbpsf, ensure to call this on the webbpsf object
         webb_inst.set_position_from_aperture_name(aperture)
 
         # Configure optics input arguments
@@ -135,7 +139,7 @@ class JWST(dl.Telescope):
         if fov_arcsec is not None:
             kwargs["fov_arcsec"] = fov_arcsec
         if fov_pixels is not None:
-            kwargs["fov_pixels"] = fov_pixels
+            kwargs["fov_pixels"] = float(fov_pixels)
         if fft_oversample is not None:
             kwargs["fft_oversample"] = fft_oversample
         if detector_oversample is not None:
@@ -146,8 +150,10 @@ class JWST(dl.Telescope):
         # Get the optical system - Note we calculate the PSF here because
         # otherwise some optical planes do not have its attributes populated,
         # namely the CLEARP mask transmission.
+        webb_inst.calc_psf()
+        optics = webb_inst.optsys
         # SIC! Check that these planes are not wavelength-dependent. There should be no need to call calc_psf!
-        optics = webb_inst.get_optical_system(**kwargs)
+        # optics = webb_inst.get_optical_system(**kwargs)
         return webb_inst, optics
 
     @staticmethod
@@ -180,18 +186,24 @@ class JWST(dl.Telescope):
         layers.append(("SIAF", DistortionFromSiaf(instrument, optics)))
 
         # Charge diffusion (via \jitter) units of arcseconds
-        layers.append(("ChargeDiffusion", ApplyChargeDiffusion(instrument, kernel_size=11)))
+        layers.append(
+            ("ChargeDiffusion", ApplyChargeDiffusion(instrument, kernel_size=11))
+        )
 
         # Downsample - assumes last plane is detector
         layers.append(("Downsample", dl.Downsample(optics.planes[-1].oversample)))
 
-        # Interpixel Capacitance
-        layers.append(
-            (
-                "IPC",
-                Convolve(get_detector_ipc_model(instrument)),
-            )
-        )
+        # NIRCam has an extra 'PPC' kernel, for only this it is simpler to just handle
+        # that case here with a unified method
+        kernel = get_detector_ipc_model(instrument)
+        if instrument.name == "NIRISS":
+            layers.append(("IPC", Convolve(kernel)))
+        elif instrument.name == "NIRCam":
+            layers.append(("IPC", Convolve(kernel[0])))
+            layers.append(("PPC", Convolve(kernel[1])))
+
+        else:
+            raise NotImplementedError("Only NIRCam and NIRISS are supported")
 
         # Construct detector
         return dl.LayeredDetector(layers)

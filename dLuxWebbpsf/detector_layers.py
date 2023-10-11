@@ -224,22 +224,22 @@ def get_detector_ipc_model(instrument):
 
         # Note: WebbPSF generates a kernel for PPC effect as well
         # This is ignored here
-        # sca_path_ppc = os.path.join(
-        #     webbpsf.utils.get_webbpsf_data_path(),
-        #     "NIRCam",
-        #     "IPC",
-        #     "KERNEL_PPC_CUBE.fits",
-        # )
-        # kernel_ppc = CustomKernel(
-        #     fits.open(sca_path_ppc)[det2sca[det]].data[0]
-        # )  # we read the first slice in the cube
+        sca_path_ppc = os.path.join(
+            webbpsf.utils.get_webbpsf_data_path(),
+            "NIRCam",
+            "IPC",
+            "KERNEL_PPC_CUBE.fits",
+        )
+        kernel_ppc = CustomKernel(
+            fits.open(sca_path_ppc)[det2sca[det]].data[0]
+        )  # we read the first slice in the cube
 
-        # kernel = (
-        #     kernel_ipc.array,
-        #     # kernel_ppc,
-        # )  # Return two distinct convolution kernels in this case
+        kernel = (
+            kernel_ipc.array,
+            kernel_ppc.array,
+        )  # Return two distinct convolution kernels in this case
 
-        kernel = kernel_ipc.array
+        # kernel = kernel_ipc.array
 
     elif inst_name == "NIRISS":
         # NIRISS IPC files distinguish between the 4 detector readout channels, and
