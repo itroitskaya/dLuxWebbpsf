@@ -127,12 +127,12 @@ class JWST(dl.Telescope):
             webb_inst.detector = detector
         if aperture is not None:
             webb_inst.aperture_name = aperture
+            # NOTE: THIS CAN CHANGE THE FOV_PIXELS!!
+            # When comparing to webbpsf, ensure to call this on the webbpsf object
+            webb_inst.set_position_from_aperture_name(aperture)
         if options is not None:
             webb_inst.options.update(options)
-
-        # NOTE: THIS CAN CHANGE THE FOV_PIXELS!!
-        # When comparing to webbpsf, ensure to call this on the webbpsf object
-        webb_inst.set_position_from_aperture_name(aperture)
+        
 
         # Configure optics input arguments
         kwargs = {}
