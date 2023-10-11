@@ -42,6 +42,7 @@ class JWST(dl.Telescope):
         phase_retrieval_terms=0,  # Number of terms in phase retrieval layer
         flux=1,  # float: flux of point source
         source=None,  # Source: dLux source object
+        **kwargs,
     ):
         # Get configured instrument_name and optical system
         instrument, osys = self._configure_instrument(
@@ -69,6 +70,7 @@ class JWST(dl.Telescope):
             instrument,
             wavefront_downsample,
             phase_retrieval_terms,
+            **kwargs,
         )
 
         # Construct source object
@@ -260,6 +262,7 @@ class NIRISS(JWST):
         phase_retrieval_terms=0,  # Number of terms in phase retrieval layer
         flux=1,  # float: flux of point source
         source=None,  # Source: dLux source object
+        **kwargs,
     ):
         super().__init__(
             "NIRISS",
@@ -276,6 +279,12 @@ class NIRISS(JWST):
             nlambda=nlambda,
             clean=clean,
             wavefront_downsample=wavefront_downsample,
+            monochromatic=monochromatic,
+            offset=offset,
+            phase_retrieval_terms=phase_retrieval_terms,
+            flux=flux,
+            source=source,
+            **kwargs,
         )
 
     def _construct_optics(
@@ -287,6 +296,7 @@ class NIRISS(JWST):
         instrument,
         wavefront_downsample,
         phase_retrieval_terms,
+        **kwargs,
     ):
         """Constructs an optics object for the instrument_name."""
 
@@ -298,7 +308,7 @@ class NIRISS(JWST):
 
         # Primary mirror
         layers = [
-            ("pupil", JWSTPrimary(dsamp(planes[0].amplitude), dsamp(planes[0].opd))),
+            ("pupil", JWSTAberratedPrimary(dsamp(planes[0].amplitude), dsamp(planes[0].opd), **kwargs)),
             ("InvertY", dl.Flip(0)),
         ]
 
@@ -398,6 +408,7 @@ class NIRCam(JWST):
         instrument,
         wavefront_downsample,
         phase_retrieval_terms,
+        **kwargs,  # NOTE: this does nothing here, will be used later for abberation arguments
     ):
         """Constructs an optics object for the instrument."""
 
