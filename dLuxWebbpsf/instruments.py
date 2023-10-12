@@ -23,7 +23,7 @@ class JWST(dl.Telescope):
 
     def __init__(
         self: JWST,
-        instrument: str,  # string: name of the instrument_name
+        instrument_name: str,  # string: name of the instrument
         filter=None,  # string: name of the filter
         pupil_mask=None,  # string: name of the pupil mask
         image_mask=None,  # string: name of the image mask
@@ -45,9 +45,9 @@ class JWST(dl.Telescope):
         load_opd_date=None, # Date of the JWST OPD to load
         **kwargs,
     ):
-        # Get configured instrument_name and optical system
+        # Get configured instrument and optical system
         instrument, osys = self._configure_instrument(
-            instrument,
+            instrument_name,
             filter=filter,
             pupil_mask=pupil_mask,
             image_mask=image_mask,
@@ -119,7 +119,7 @@ class JWST(dl.Telescope):
 
         # TODO: Instrument specific checks for valid inputs
 
-        # Configure the instrument_name
+        # Configure the instrument
         if filter is not None:
             webb_inst.filter = filter
         if pupil_mask is not None:
@@ -172,14 +172,14 @@ class JWST(dl.Telescope):
         """
 
         # TODO build compatibility with webbpsf options
-        # options = instrument_name.options
+        # options = instrument.options
         layers = []
 
         # # Jitter - webbpsf default units are arcseconds, so we assume that psf
         # # units are also arcseconds
         # if "jitter" in options.keys() and options["jitter"] == "gaussian":
         #     layers.append(
-        #         ("jitter", ApplyJitter(sigma=instrument_name.options["jitter_sigma"]))
+        #         ("jitter", ApplyJitter(sigma=instrument.options["jitter_sigma"]))
         #     )
 
         # Rotation - probably want to eventually change units to degrees
@@ -215,7 +215,7 @@ class JWST(dl.Telescope):
     def _construct_source(
         self, *, instrument, source, nlambda, monochromatic, offset, flux
     ):
-        """Constructs a source object for the instrument_name."""
+        """Constructs a source object for the instrument."""
 
         if nlambda is None or nlambda == 0:
             nlambda = instrument._get_default_nlambda(instrument.filter)
@@ -300,7 +300,7 @@ class NIRISS(JWST):
         phase_retrieval_terms,
         **kwargs,
     ):
-        """Constructs an optics object for the instrument_name."""
+        """Constructs an optics object for the instrument."""
 
         # Construct downsampler
         def dsamp(x):
@@ -355,7 +355,7 @@ class NIRISS(JWST):
 
 class NIRCam(JWST):
     """
-    Class for the NIRCam instrument_name on the James Webb Space Telescope.
+    Class for the NIRCam instrument on the James Webb Space Telescope.
     """
 
     def __init__(
