@@ -42,7 +42,7 @@ plt.title('NIRISS PSF')
 plt.show()
 ```
 
-![Example Image](./assets/niriss_psf.png)
+![Example Image](./assets/niriss_psf.jpg)
 
 ## Contributors
 [Irina Troitskaya](https://github.com/itroitskaya), [Louis Desdoigts](https://github.com/LouisDesdoigts), [Max Charles](https://github.com/maxecharles), [Benjamin Pope](https://github.com/benjaminpope), and [Peter Tuthill](https://github.com/ptuthill).
