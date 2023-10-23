@@ -1,6 +1,5 @@
 import webbpsf
 import webbpsf.constants as const
-import dLux as dl
 import dLux.utils as dlu
 import jax.numpy as np
 import numpy as onp
