@@ -1,6 +1,7 @@
 import webbpsf
 import webbpsf.constants as const
 import dLux.utils as dlu
+import dLuxWebbpsf as dlW
 import jax.numpy as np
 import numpy as onp
 
@@ -79,6 +80,7 @@ def generate_jwst_hexike_basis(
     radial_orders: Array | list = None,
     noll_indices: Array | list = None,
     AMI: bool = False,
+    base_pscale = 0.065562,  # averaged over filters
     mask: bool = False,
 ):
     """
@@ -149,7 +151,7 @@ def generate_jwst_hexike_basis(
 
     niriss_osys = niriss.get_optical_system()
     seg_cens = dict(const.JWST_PRIMARY_SEGMENT_CENTERS)
-    pscale = niriss_osys.planes[0].pixelscale.value * 1024 / npix
+    pscale = base_pscale * 1024 / npix
 
     # Generating a basis for each segment (all terms up to highest noll index)
     basis = []

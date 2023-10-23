@@ -8,10 +8,11 @@ import scipy
 import dLux as dl
 import dLux.utils as dlu
 from dLux.layers.optical_layers import OpticalLayer
+from dLuxWebbpsf import constants as const
 
 import scipy.special
 from .utils import j1, get_pixel_positions
-from .basis import generate_jwst_hexike_basis, generate_jwst_secondary_basis
+from .utils.aberrations import generate_jwst_hexike_basis, generate_jwst_secondary_basis
 
 __all__ = [
     "JWSTPrimary",
@@ -81,6 +82,7 @@ class JWSTAberratedPrimary(JWSTPrimary, dl.optical_layers.BasisLayer):
         secondary_radial_orders: Array | list = None,
         secondary_noll_indices: Array | list = None,
         AMI: bool = False,
+        filt: str = "AVG",
     ):
         """
         Parameters
@@ -114,6 +116,8 @@ class JWSTAberratedPrimary(JWSTPrimary, dl.optical_layers.BasisLayer):
             The hexike noll indices to be used for the secondary mirror abberations.
         AMI : bool
             Whether to operate in AMI mode (True) or full-pupil (False).
+        filt : str
+            The filter to use for the pixel scale. Default is 'AVG' which is the average of all filters.
         """
         npix: int = transmission.shape[0]
         super().__init__(transmission=transmission, opd=opd)
@@ -130,6 +134,7 @@ class JWSTAberratedPrimary(JWSTPrimary, dl.optical_layers.BasisLayer):
             noll_indices=noll_indices,
             npix=npix,
             AMI=AMI,
+            base_pscale=const.NIRISS_PIXEL_SCALES[filt],
             mask=False,
         )
 

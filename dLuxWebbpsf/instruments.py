@@ -7,7 +7,7 @@ import webbpsf
 
 from .detector_layers import *
 from .optical_layers import *
-from .basis import generate_jwst_basis
+from .utils.aberrations import generate_jwst_basis
 
 __all__ = ["NIRISS", "NIRCam"]
 
@@ -24,7 +24,7 @@ class JWST(dl.Telescope):
     def __init__(
         self: JWST,
         instrument_name: str,  # string: name of the instrument
-        filter=None,  # string: name of the filter
+        filt=None,  # string: name of the filter
         pupil_mask=None,  # string: name of the pupil mask
         image_mask=None,  # string: name of the image mask
         detector=None,  # string: name of the detector
@@ -48,7 +48,7 @@ class JWST(dl.Telescope):
         # Get configured instrument and optical system
         instrument, osys = self._configure_instrument(
             instrument_name,
-            filter=filter,
+            filt=filt,
             pupil_mask=pupil_mask,
             image_mask=image_mask,
             detector=detector,
@@ -93,7 +93,7 @@ class JWST(dl.Telescope):
     def _configure_instrument(
         instrument_name,
         *,
-        filter,
+        filt,
         pupil_mask,
         image_mask,
         detector,
@@ -120,8 +120,8 @@ class JWST(dl.Telescope):
         # TODO: Instrument specific checks for valid inputs
 
         # Configure the instrument
-        if filter is not None:
-            webb_inst.filter = filter
+        if filt is not None:
+            webb_inst.filter = filt
         if pupil_mask is not None:
             webb_inst.pupil_mask = pupil_mask
         if image_mask is not None:
@@ -246,7 +246,7 @@ class NIRISS(JWST):
 
     def __init__(
         self: NIRISS,
-        filter=None,  # string: name of the filter
+        filt=None,  # string: name of the filter
         pupil_mask=None,  # string: name of the pupil mask
         image_mask=None,  # string: name of the image mask
         detector=None,  # string: name of the detector
@@ -268,7 +268,7 @@ class NIRISS(JWST):
     ):
         super().__init__(
             "NIRISS",
-            filter=filter,
+            filt=filt,
             pupil_mask=pupil_mask,
             image_mask=image_mask,
             detector=detector,
@@ -309,7 +309,7 @@ class NIRISS(JWST):
         npix = 1024 // wavefront_downsample
 
         # Primary mirror
-        layers = [
+        layers = [  # can pass filt to JWSTAberratedPrimary
             ("pupil", JWSTAberratedPrimary(dsamp(planes[0].amplitude), dsamp(planes[0].opd), **kwargs)),
             ("InvertY", dl.Flip(0)),
         ]
@@ -360,7 +360,7 @@ class NIRCam(JWST):
 
     def __init__(
         self: NIRCam,
-        filter=None,  # string: name of the filter
+        filt=None,  # string: name of the filter
         pupil_mask=None,  # string: name of the pupil mask
         image_mask=None,  # string: name of the image mask
         detector=None,  # string: name of the detector
@@ -382,7 +382,7 @@ class NIRCam(JWST):
     ):
         super().__init__(
             "NIRCam",
-            filter=filter,
+            filt=filt,
             pupil_mask=pupil_mask,
             image_mask=image_mask,
             detector=detector,
@@ -412,7 +412,7 @@ class NIRCam(JWST):
         instrument,
         wavefront_downsample,
         phase_retrieval_terms,
-        **kwargs,  # NOTE: this does nothing here, will be used later for abberation arguments
+        **kwargs,  # NOTE: this does nothing here, will be used later for aberration arguments
     ):
         """Constructs an optics object for the instrument."""
 
