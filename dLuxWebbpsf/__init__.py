@@ -5,12 +5,14 @@ __version__ = "0.0.1"
 from . import optical_layers
 from . import instruments
 from . import detector_layers
+from . import constants
 from .utils import aberrations
 
 # Import core functions from modules
 from .optical_layers import *
 from .instruments import *
 from .detector_layers import *
+from .constants import *
 from .utils.aberrations import *
 
 
