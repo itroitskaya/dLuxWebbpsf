@@ -20,7 +20,7 @@ def gaussian_kernel_1d(sigma, ksize=11, order=4):
     """
     Computes a 1-d Gaussian convolution kernel.
     """
-    r = int(sigma * order + 0.5)
+    r = (sigma * order + 0.5).astype(int)
     x = np.linspace(-r, r, ksize)
     phi_x = np.exp(-0.5 / sigma**2 * x**2)
     return phi_x / phi_x.sum()
