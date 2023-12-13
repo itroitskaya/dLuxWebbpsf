@@ -16,11 +16,12 @@ __all__ = [
 ]
 
 
-def gaussian_kernel_1d(sigma, ksize=11):
+def gaussian_kernel_1d(sigma, ksize=11, order=4):
     """
     Computes a 1-d Gaussian convolution kernel.
     """
-    x = np.linspace(-ksize / 2, ksize / 2, ksize)
+    r = np.floor(sigma * order + 0.5)
+    x = np.linspace(-r, r, ksize)
     phi_x = np.exp(-0.5 / sigma**2 * x**2)
     return phi_x / phi_x.sum()
 
@@ -45,7 +46,7 @@ def gaussian_filter(arr, sigma, ksize=11):
 
     for i in range(arr.ndim):
         arr = conv_axis(arr, kernel, i)
-    return arr[tuple([slice(k, -k, 1) for i in range(arr.ndim)])]
+    return arr[tuple([slice(k, -k, 1) for i in range(arr.ndim)])].T
 
 
 # Correlation

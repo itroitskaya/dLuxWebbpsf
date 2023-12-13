@@ -23,7 +23,7 @@ class JWST(dl.Telescope):
 
     def __init__(
         self: JWST,
-        instrument: str,  # string: name of the instrument
+        instrument_name: str,  # string: name of the instrument
         filter=None,  # string: name of the filter
         pupil_mask=None,  # string: name of the pupil mask
         image_mask=None,  # string: name of the image mask
@@ -42,11 +42,12 @@ class JWST(dl.Telescope):
         phase_retrieval_terms=0,  # Number of terms in phase retrieval layer
         flux=1,  # float: flux of point source
         source=None,  # Source: dLux source object
-        load_opd_date=None # Date of the JWST OPD to load
+        load_opd_date=None, # Date of the JWST OPD to load
+        **kwargs,
     ):
         # Get configured instrument and optical system
         instrument, osys = self._configure_instrument(
-            instrument,
+            instrument_name,
             filter=filter,
             pupil_mask=pupil_mask,
             image_mask=image_mask,
@@ -69,6 +70,7 @@ class JWST(dl.Telescope):
             instrument,
             wavefront_downsample,
             phase_retrieval_terms,
+            **kwargs,
         )
 
         # Construct source object
@@ -84,12 +86,12 @@ class JWST(dl.Telescope):
         # Construct Detector Object
         detector = self._construct_detector(instrument, osys)
 
-        # Construct the instrument
+        # Construct the instrument_name
         super().__init__(optics=optics, source=source, detector=detector)
 
     @staticmethod
     def _configure_instrument(
-        instrument,
+        instrument_name,
         *,
         filter,
         pupil_mask,
@@ -104,43 +106,44 @@ class JWST(dl.Telescope):
         load_opd_date,
     ):
         """
-        Configure a WebbPSF instrument for use with dLuxWebbpsf.
+        Configure a WebbPSF instrument_name for use with dLuxWebbpsf.
         """
         # Check Valid Instrument
-        if instrument not in ("NIRCam", "NIRISS"):
+        if instrument_name not in ("NIRCam", "NIRISS"):
             raise NotImplementedError(
-                f"Instrument {instrument} not currently supported."
+                f"Instrument {instrument_name} not currently supported."
             )
 
-        # Get WebbPSF instrument
-        webb_osys = getattr(webbpsf, instrument)()
+        # Get WebbPSF instrument_name
+        webb_inst = getattr(webbpsf, instrument_name)()
 
         # TODO: Instrument specific checks for valid inputs
 
         # Configure the instrument
         if filter is not None:
-            webb_osys.filter = filter
+            webb_inst.filter = filter
         if pupil_mask is not None:
-            webb_osys.pupil_mask = pupil_mask
+            webb_inst.pupil_mask = pupil_mask
         if image_mask is not None:
-            webb_osys.image_mask = image_mask
+            webb_inst.image_mask = image_mask
         if detector is not None:
-            webb_osys.detector = detector
+            webb_inst.detector = detector
         if aperture is not None:
-            webb_osys.aperture_name = aperture
+            webb_inst.aperture_name = aperture
+            # NOTE: THIS CAN CHANGE THE FOV_PIXELS!!
+            # When comparing to webbpsf, ensure to call this on the webbpsf object
+            webb_inst.set_position_from_aperture_name(aperture)
         if options is not None:
-            webb_osys.options.update(options)
+            webb_inst.options.update(options)
         if load_opd_date is not None:
-            webb_osys.load_wss_opd_by_date(load_opd_date)
-
-        webb_osys.set_position_from_aperture_name(aperture)
+            webb_inst.load_wss_opd_by_date(load_opd_date)
 
         # Configure optics input arguments
         kwargs = {}
         if fov_arcsec is not None:
             kwargs["fov_arcsec"] = fov_arcsec
         if fov_pixels is not None:
-            kwargs["fov_pixels"] = fov_pixels
+            kwargs["fov_pixels"] = float(fov_pixels)
         if fft_oversample is not None:
             kwargs["fft_oversample"] = fft_oversample
         if detector_oversample is not None:
@@ -148,46 +151,65 @@ class JWST(dl.Telescope):
         if options is not None:
             kwargs["options"] = options
 
-        # Get the optical system - Note we calculate the PSF here because
-        # otherwise some optical planes do not have its attributes populated,
-        # namely the CLEARP mask transmission.
-        # SIC! Check that these planes are not wavelength-dependent. There should be no need to call calc_psf!
-        optics = webb_osys.get_optical_system(**kwargs)
-        # optics.calc_psf()
-        return webb_osys, optics
+        # Get the optical system
+        optics = webb_inst.get_optical_system(**kwargs)
+        return webb_inst, optics
 
-    def _construct_detector(self, instrument, optics):
-        """Constructs a detector object for the instrument."""
+    @staticmethod
+    def _construct_detector(instrument, optics):
+        """Constructs a detector object for the instrument. The detector effects include:
+        - Gaussian Jitter [not included, it has no effect in webbpsf]
+        - Rotation
+        - SIAF Distortion
+        - Charge Diffusion (Gaussian filter)
+        - Downsample
+        - Interpixel Capacitance (Gaussian filter)
+        """
 
+        # TODO build compatibility with webbpsf options
         options = instrument.options
+        add_distortion = options.get('add_distortion', True)
+
         layers = []
 
-        # Jitter - webbpsf default units are arcseconds, so we assume that psf
-        # units are also arcseconds
-        if "jitter" in options.keys() and options["jitter"] == "gaussian":
-            layers.append(
-                ("jitter", ApplyJitter(sigma=instrument.options["jitter_sigma"]))
-            )
+        if add_distortion:
+            pixscale = (optics.planes[-1].pixelscale).to("arcsec/pix").value / optics.planes[-1].oversample
 
-        # Rotation - probably want to eventually change units to degrees
-        # angle = instrument._detector_geom_info.aperture.V3IdlYAngle
-        # layers.append(Rotate(angle=dlu.deg2rad(-angle)))
+            # # Jitter - webbpsf default units are arcseconds, so we assume that psf
+            # # units are also arcseconds
+            # if "jitter" in options.keys() and options["jitter"] == "gaussian":
+            #     layers.append(
+            #         ("jitter", ApplyJitter(sigma=instrument.options["jitter_sigma"]))
+            #     )
 
-        # Distortion
-        if "add_distortion" not in options.keys() or options["add_distortion"]:
-            layers.append(DistortionFromSiaf(instrument, optics))
+            if options.get('dl_add_rotation', True):
+                # Rotation - probably want to eventually change units to degrees
+                angle = instrument._detector_geom_info.aperture.V3IdlYAngle
+                layers.append(("Rotation", Rotate(angle=dlu.deg2rad(-angle))))
 
-        # # Charge migration (via \jitter) units of arcseconds
-        # c = webbpsf.constants
-        # sigma = c.INSTRUMENT_DETECTOR_CHARGE_DIFFUSION_DEFAULT_PARAMETERS[
-        #     instrument.name
-        # ]
-        # layers.append(
-        #     (ApplyJitter(sigma=sigma), "charge_migration")
-        # )
+            if options.get('dl_add_siaf', True):
+                # SIAF Distortion
+                layers.append(("SIAF", DistortionFromSiaf(instrument, optics)))
+
+            if options.get('dl_add_diffusion', True):
+                # Charge diffusion (via \jitter) units of arcseconds
+                layers.append(("ChargeDiffusion", ApplyChargeDiffusion(instrument, pixscale)))
 
         # Downsample - assumes last plane is detector
-        layers.append(dl.Downsample(optics.planes[-1].oversample))
+        layers.append(("Downsample", dl.Downsample(optics.planes[-1].oversample)))
+
+
+        if add_distortion and options.get('add_ipc', True):
+            # NIRCam has an extra 'PPC' kernel, for only this it is simpler to just handle
+            # that case here with a unified method
+            kernel = get_detector_ipc_model(instrument)
+            if instrument.name == "NIRISS":
+                layers.append(("IPC", Convolve(kernel)))
+            elif instrument.name == "NIRCam":
+                layers.append(("IPC", Convolve(kernel[0])))
+                layers.append(("PPC", Convolve(kernel[1])))
+            else:
+                raise NotImplementedError("Only NIRCam and NIRISS are supported")
 
         # Construct detector
         return dl.LayeredDetector(layers)
@@ -212,7 +234,9 @@ class JWST(dl.Telescope):
             position = [0, 0]
             if offset is not None:
                 position = offset
-            source = dl.PointSource(wavelengths=wavelengths, weights=weights, position=position, flux=flux)
+            source = dl.PointSource(
+                wavelengths=wavelengths, weights=weights, position=position, flux=flux
+            )
 
         return source
 
@@ -242,6 +266,7 @@ class NIRISS(JWST):
         phase_retrieval_terms=0,  # Number of terms in phase retrieval layer
         flux=1,  # float: flux of point source
         source=None,  # Source: dLux source object
+        **kwargs,
     ):
         super().__init__(
             "NIRISS",
@@ -258,6 +283,12 @@ class NIRISS(JWST):
             nlambda=nlambda,
             clean=clean,
             wavefront_downsample=wavefront_downsample,
+            monochromatic=monochromatic,
+            offset=offset,
+            phase_retrieval_terms=phase_retrieval_terms,
+            flux=flux,
+            source=source,
+            **kwargs,
         )
 
     def _construct_optics(
@@ -269,17 +300,19 @@ class NIRISS(JWST):
         instrument,
         wavefront_downsample,
         phase_retrieval_terms,
+        **kwargs,
     ):
         """Constructs an optics object for the instrument."""
 
         # Construct downsampler
-        def dsamp(x): return dlu.downsample(x, wavefront_downsample)
+        def dsamp(x):
+            return dlu.downsample(x, wavefront_downsample)
 
         npix = 1024 // wavefront_downsample
 
         # Primary mirror
         layers = [
-            ("pupil", JWSTPrimary(dsamp(planes[0].amplitude), dsamp(planes[0].opd))),
+            ("pupil", JWSTAberratedPrimary(dsamp(planes[0].amplitude), dsamp(planes[0].opd), **kwargs)),
             ("InvertY", dl.Flip(0)),
         ]
 
@@ -294,7 +327,9 @@ class NIRISS(JWST):
 
         # No image mask layers yet for NIRISS
         if image_mask is not None:
-            raise NotImplementedError("Coronagraphic masks not yet implemented for NIRISS.")
+            raise NotImplementedError(
+                "Coronagraphic masks not yet implemented for NIRISS."
+            )
 
         # Index this from the end of the array since it will always be the second
         # last plane in the osys. Note this assumes there is no OPD in that optic.
@@ -370,8 +405,8 @@ class NIRCam(JWST):
             load_opd_date=load_opd_date
         )
 
+    @staticmethod
     def _construct_optics(
-        self,
         planes,
         image_mask,
         pupil_mask,
@@ -379,11 +414,13 @@ class NIRCam(JWST):
         instrument,
         wavefront_downsample,
         phase_retrieval_terms,
+        **kwargs,  # NOTE: this does nothing here, will be used later for abberation arguments
     ):
         """Constructs an optics object for the instrument."""
 
         # Construct downsampler
-        def dsamp(x): return dlu.downsample(x, wavefront_downsample)
+        def dsamp(x):
+            return dlu.downsample(x, wavefront_downsample)
 
         diameter = planes[0].pixelscale.to("m/pix").value * planes[0].npix
         npix = planes[0].npix // wavefront_downsample
@@ -409,13 +446,15 @@ class NIRCam(JWST):
 
             layers.append(("pupil", pupil))
         else:
-            pupil = JWSTSimplePrimary(pupil_transmission, pupil_opd, pscale)
+            pupil = JWSTPrimary(pupil_transmission, pupil_opd, pscale)
             layers.append(("pupil", pupil))
 
-        layers.extend([
+        layers.extend(
+            [
                 # Plane 1: Coordinate Inversion in y axis
                 ("InvertY", dl.Flip(0))
-        ])
+            ]
+        )
 
         # Coronagraphic masks
         # TODO: This should explicity check for the correct mask (ie CIRCLYOT)

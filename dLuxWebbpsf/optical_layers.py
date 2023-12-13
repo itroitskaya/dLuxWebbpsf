@@ -81,7 +81,6 @@ class JWSTAberratedPrimary(JWSTPrimary, dl.optical_layers.BasisLayer):
         secondary_radial_orders: Array | list = None,
         secondary_noll_indices: Array | list = None,
         AMI: bool = False,
-        mask: bool = False,
     ):
         """
         Parameters
@@ -115,8 +114,6 @@ class JWSTAberratedPrimary(JWSTPrimary, dl.optical_layers.BasisLayer):
             The hexike noll indices to be used for the secondary mirror abberations.
         AMI : bool
             Whether to operate in AMI mode (True) or full-pupil (False).
-        mask : bool
-            Whether to apodise the basis with the AMI transmission mask or not. Recommended is False.
         """
         npix: int = transmission.shape[0]
         super().__init__(transmission=transmission, opd=opd)
@@ -133,7 +130,7 @@ class JWSTAberratedPrimary(JWSTPrimary, dl.optical_layers.BasisLayer):
             noll_indices=noll_indices,
             npix=npix,
             AMI=AMI,
-            mask=mask,
+            mask=False,
         )
 
         if secondary_radial_orders is not None and secondary_noll_indices is not None:
@@ -142,6 +139,9 @@ class JWSTAberratedPrimary(JWSTPrimary, dl.optical_layers.BasisLayer):
                 "secondary_noll_indices."
             )
             secondary_radial_orders = None
+
+        if coefficients is None:
+            coefficients = np.zeros(shape=primary_basis.shape[:-2])
 
         if secondary_coefficients is not None:
             secondary_basis = generate_jwst_secondary_basis(
@@ -166,7 +166,7 @@ class JWSTAberratedPrimary(JWSTPrimary, dl.optical_layers.BasisLayer):
         """
 
         outputs = jtu.tree_map(
-            lambda b, c: self.eval_basis(b, c), (self.basis,), (self.coefficients,)
+            lambda b, c: dlu.eval_basis(b, c), (self.basis,), (self.coefficients,)
         )
         return np.array(jtu.tree_flatten(outputs)[0]).sum(0)
 
