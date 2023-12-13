@@ -151,13 +151,8 @@ class JWST(dl.Telescope):
         if options is not None:
             kwargs["options"] = options
 
-        # Get the optical system - Note we calculate the PSF here because
-        # otherwise some optical planes do not have its attributes populated,
-        # namely the CLEARP mask transmission.
-        webb_inst.calc_psf()
-        optics = webb_inst.optsys
-        # SIC! Check that these planes are not wavelength-dependent. There should be no need to call calc_psf!
-        # optics = webb_inst.get_optical_system(**kwargs)
+        # Get the optical system
+        optics = webb_inst.get_optical_system(**kwargs)
         return webb_inst, optics
 
     @staticmethod
@@ -172,42 +167,49 @@ class JWST(dl.Telescope):
         """
 
         # TODO build compatibility with webbpsf options
-        # options = instrument.options
+        options = instrument.options
+        add_distortion = options.get('add_distortion', True)
+
         layers = []
 
-        # # Jitter - webbpsf default units are arcseconds, so we assume that psf
-        # # units are also arcseconds
-        # if "jitter" in options.keys() and options["jitter"] == "gaussian":
-        #     layers.append(
-        #         ("jitter", ApplyJitter(sigma=instrument.options["jitter_sigma"]))
-        #     )
+        if add_distortion:
+            pixscale = (optics.planes[-1].pixelscale).to("arcsec/pix").value / optics.planes[-1].oversample
 
-        # Rotation - probably want to eventually change units to degrees
-        angle = instrument._detector_geom_info.aperture.V3IdlYAngle
-        layers.append(("Rotation", Rotate(angle=dlu.deg2rad(-angle))))
+            # # Jitter - webbpsf default units are arcseconds, so we assume that psf
+            # # units are also arcseconds
+            # if "jitter" in options.keys() and options["jitter"] == "gaussian":
+            #     layers.append(
+            #         ("jitter", ApplyJitter(sigma=instrument.options["jitter_sigma"]))
+            #     )
 
-        # Distortion
-        layers.append(("SIAF", DistortionFromSiaf(instrument, optics)))
+            if options.get('dl_add_rotation', True):
+                # Rotation - probably want to eventually change units to degrees
+                angle = instrument._detector_geom_info.aperture.V3IdlYAngle
+                layers.append(("Rotation", Rotate(angle=dlu.deg2rad(-angle))))
 
-        # Charge diffusion (via \jitter) units of arcseconds
-        layers.append(
-            ("ChargeDiffusion", ApplyChargeDiffusion(instrument, kernel_size=11))
-        )
+            if options.get('dl_add_siaf', True):
+                # SIAF Distortion
+                layers.append(("SIAF", DistortionFromSiaf(instrument, optics)))
+
+            if options.get('dl_add_diffusion', True):
+                # Charge diffusion (via \jitter) units of arcseconds
+                layers.append(("ChargeDiffusion", ApplyChargeDiffusion(instrument, pixscale)))
 
         # Downsample - assumes last plane is detector
         layers.append(("Downsample", dl.Downsample(optics.planes[-1].oversample)))
 
-        # NIRCam has an extra 'PPC' kernel, for only this it is simpler to just handle
-        # that case here with a unified method
-        kernel = get_detector_ipc_model(instrument)
-        if instrument.name == "NIRISS":
-            layers.append(("IPC", Convolve(kernel)))
-        elif instrument.name == "NIRCam":
-            layers.append(("IPC", Convolve(kernel[0])))
-            layers.append(("PPC", Convolve(kernel[1])))
 
-        else:
-            raise NotImplementedError("Only NIRCam and NIRISS are supported")
+        if add_distortion and options.get('add_ipc', True):
+            # NIRCam has an extra 'PPC' kernel, for only this it is simpler to just handle
+            # that case here with a unified method
+            kernel = get_detector_ipc_model(instrument)
+            if instrument.name == "NIRISS":
+                layers.append(("IPC", Convolve(kernel)))
+            elif instrument.name == "NIRCam":
+                layers.append(("IPC", Convolve(kernel[0])))
+                layers.append(("PPC", Convolve(kernel[1])))
+            else:
+                raise NotImplementedError("Only NIRCam and NIRISS are supported")
 
         # Construct detector
         return dl.LayeredDetector(layers)
@@ -440,13 +442,11 @@ class NIRCam(JWST):
 
             pupil_transmission = pupil_transmission
 
-            pupil = JWSTSimplePrimary(
-                pupil_transmission, pupil_opd, pscale, basis_flat, coeffs
-            )
+            pupil = JWSTSimplePrimary(pupil_transmission, pupil_opd, pscale, basis_flat, coeffs)
 
             layers.append(("pupil", pupil))
         else:
-            pupil = JWSTSimplePrimary(pupil_transmission, pupil_opd, pscale)
+            pupil = JWSTPrimary(pupil_transmission, pupil_opd, pscale)
             layers.append(("pupil", pupil))
 
         layers.extend(

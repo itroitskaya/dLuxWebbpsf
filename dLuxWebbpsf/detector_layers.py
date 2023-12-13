@@ -54,7 +54,7 @@ class ApplyChargeDiffusion(dl.detector_layers.DetectorLayer):
     sigma: float
     kernel_size: int
 
-    def __init__(self, instrument, kernel_size: int = 11):
+    def __init__(self, instrument, pixelscale):
         if instrument.name == "NIRCam":
             instrument_key = self._check_nircam_filter(instrument)
         else:
@@ -69,21 +69,15 @@ class ApplyChargeDiffusion(dl.detector_layers.DetectorLayer):
                 f"instrument_key {instrument_key} not in {charge_def_params.keys()}"
             )
 
-        if kernel_size % 2 == 0:
-            raise ValueError("kernel_size must be an odd integer")
+        """Convert sigma to units of pixels. NOTE: this assumes sigma has
+        the same units as the pixel scale."""
+        self.sigma = float(charge_def_params[instrument_key]) / pixelscale
+        self.kernel_size = int(2*round(4*self.sigma) + 1)
 
-        self.kernel_size = int(kernel_size)
-        self.sigma = float(charge_def_params[instrument_key])  # arcsec
         super().__init__()
 
     def apply(self, PSF):
-        """Convert sigma to units of pixels. NOTE: this assumes sigma has
-        the same units as the pixel scale."""
-        sigma_pix = self.sigma / dlu.rad2arcsec(PSF.pixel_scale)
-
-        diffused = utils.gaussian_filter_correlate(
-            PSF.data, sigma_pix, ksize=self.kernel_size
-        )
+        diffused = utils.gaussian_filter_correlate(PSF.data, self.sigma, ksize=self.kernel_size)
         return PSF.set("data", diffused)
 
     @staticmethod
