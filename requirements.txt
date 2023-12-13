@@ -1,5 +1,0 @@
-dlux==0.14.*
-jax
-webbpsf==1.2.*
-numpy
-scipy

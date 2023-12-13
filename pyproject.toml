@@ -1,17 +1,22 @@
-[build-system]
-requires = ["setuptools>=45", "setuptools_scm[toml]>=6.2"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "dLuxWebbpsf"
 version = "0.0.9"
-description = "A repo to hold dLux Webbpsf models."
+description = "Differentiable James Webb Space Telescope PSF simulation tool on Jax using dLux"
 readme = "README.md"
+requires-python =">=3.8"
+license = {file = "LICENSE.md"}
+authors = [
+  {name = "Irina Troitskaya", email = "i.troitskaya@uq.edu.au"},
+]
+keywords = ["python", "optics", "machine-learning", "jax", "autodiff", "differentiable", "diffraction", "simulation", "telescope", "dLux", "jwst"]
+urls = {repository = "https://github.com/itroitskaya/dLuxWebbpsf"}
+dependencies = ["jax", "jaxlib", "dlux==0.14.*", "webbpsf==1.2.*", "numpy", "scipy"]
 
-#[dependencies]
-#dLux = "*"
-#jax = "*"
-#jaxlib = "*"
-#
-#[test]
-#[scripts]
+classifiers=[
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
