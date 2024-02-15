@@ -4,6 +4,7 @@ import dLux.utils as dlu
 
 __all__ = ["rotate"]
 
+
 def rotate(array: Array, angle: Array, order: int = 3) -> Array:
     """
     Rotates an array by the angle, using linear interpolation.
@@ -36,7 +37,9 @@ def rotate(array: Array, angle: Array, order: int = 3) -> Array:
     coordinates_rotated = _rotate(coordinates, angle) + centre
 
     # Interpolate
-    return _map_coordinates(array, coordinates_rotated, order=order, mode="constant", cval=0.0)
+    return _map_coordinates(
+        array, coordinates_rotated, order=order, mode="constant", cval=0.0
+    )
 
 
 """
@@ -61,7 +64,7 @@ from jax import lax, vmap
 
 # from jax._src.numpy import lax_numpy as jnp
 import jax.numpy as jnp
-from jax._src.numpy.util import _wraps
+
 from jax._src.typing import ArrayLike, Array
 from jax._src.util import safe_zip as zip
 from jax._src.numpy.linalg import inv
