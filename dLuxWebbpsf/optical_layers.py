@@ -73,7 +73,7 @@ class JWSTAberratedPrimary(JWSTPrimary, dl.optical_layers.BasisLayer):
     def __init__(
         self,
         transmission: Array,
-        opd: Array,
+        opd: Array = None,
         coefficients: Array | list = None,
         radial_orders: Array | list = None,
         noll_indices: Array | list = None,
@@ -175,7 +175,10 @@ class JWSTAberratedPrimary(JWSTPrimary, dl.optical_layers.BasisLayer):
         amplitude = wavefront.amplitude * self.transmission
         amplitude /= np.linalg.norm(amplitude)
 
-        total_opd = self.opd + self.basis_opd
+        if self.opd is None:
+            total_opd = self.basis_opd
+        else:
+            total_opd = self.opd + self.basis_opd
 
         # Apply phase
         phase = wavefront.phase + wavefront.wavenumber * total_opd
